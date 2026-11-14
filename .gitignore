@@ -1,0 +1,42 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Respaldos y archivos generados
+state-backup*.json
+app.zip
+s3-encryption.json
+
+# Secretos y credenciales
+.env
+.env.*
+*.pem
+*.key
+id_rsa
+id_ed25519
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+# Planes de Terraform
+plan.txt
+
+# Planes de Terraform
+plan.txt
