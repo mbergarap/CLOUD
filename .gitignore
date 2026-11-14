@@ -40,3 +40,16 @@ plan.txt
 
 # Planes de Terraform
 plan.txt
+
+
+
+# Archivos temporales de validacion
+userdata-*.sh
+*.tfplan
+*.tfplan.*
+# Respaldos locales de Terraform
+*.tf.respaldo
+
+# Respaldos del README
+README.md.respaldo
+README.md.antes-de-corregir

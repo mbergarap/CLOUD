@@ -1,19 +1,43 @@
-output "db_endpoint" {
-  value = aws_db_instance.main.endpoint
-}
+
+# =========================
+# OUTPUTS DATABASE
+# =========================
+
+# AWS Academy utiliza academy[0].
+# AWS estandar utiliza managed[0].
 
 output "db_address" {
-  value = aws_db_instance.main.address
-}
-
-output "db_port" {
-  value = aws_db_instance.main.port
+  description = "Direccion privada de RDS"
+  value = (
+    var.manage_master_user_password
+    ? aws_db_instance.managed[0].address
+    : aws_db_instance.academy[0].address
+  )
 }
 
 output "db_name" {
-  value = aws_db_instance.main.db_name
+  description = "Nombre de la base de datos"
+  value = (
+    var.manage_master_user_password
+    ? aws_db_instance.managed[0].db_name
+    : aws_db_instance.academy[0].db_name
+  )
 }
 
 output "db_instance_identifier" {
-  value = aws_db_instance.main.identifier
+  description = "Identificador de RDS para CloudWatch"
+  value = (
+    var.manage_master_user_password
+    ? aws_db_instance.managed[0].identifier
+    : aws_db_instance.academy[0].identifier
+  )
+}
+
+output "db_secret_arn" {
+  description = "ARN del secreto administrado por RDS"
+  value = (
+    var.manage_master_user_password
+    ? aws_db_instance.managed[0].master_user_secret[0].secret_arn
+    : null
+  )
 }

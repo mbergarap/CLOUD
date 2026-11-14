@@ -19,6 +19,29 @@ data "aws_ami" "amazon_linux" {
 }
 
 # =========================
+# CONFIGURACION DE CREDENCIALES
+# =========================
+
+locals {
+  db_credentials_secrets = <<-SECRETS
+    aws secretsmanager get-secret-value \
+      --region us-east-1 \
+      --secret-id '${coalesce(var.db_secret_arn, "secreto-no-configurado")}' \
+      --query SecretString \
+      --output text \
+      | python3 -c 'import json,sys; p=json.load(sys.stdin)["password"]; print("DB_PASSWORD="+json.dumps(p))' \
+      > /etc/cloud-app/db.env
+  SECRETS
+
+  db_credentials_academy = <<-ACADEMY
+    cat > /etc/cloud-app/db.env <<'DBENV'
+    DB_PASSWORD=${jsonencode(var.db_password)}
+    DBENV
+  ACADEMY
+
+  db_credentials_setup = var.manage_master_user_password ? local.db_credentials_secrets : local.db_credentials_academy
+}
+# =========================
 # LAUNCH TEMPLATE
 # =========================
 
@@ -32,14 +55,17 @@ resource "aws_launch_template" "app" {
     var.app_sg_id
   ]
 
-  # Perfil IAM configurable
+  # Perfil IAM configurable.
+  # AWS Academy: LabInstanceProfile.
+  # AWS estandar: perfil propio.
+
   iam_instance_profile {
     name = var.instance_profile_name
   }
 
   user_data = base64encode(<<-EOF
     #!/bin/bash
-    set -e
+    set -euo pipefail
 
     # =========================
     # INSTALAR PAQUETES
@@ -52,6 +78,7 @@ resource "aws_launch_template" "app" {
       python3 \
       python3-pip \
       unzip \
+      awscli-2 \
       amazon-cloudwatch-agent
 
     # =========================
@@ -87,6 +114,16 @@ resource "aws_launch_template" "app" {
     touch /var/log/cloud-app-error.log
 
     # =========================
+    # CONFIGURAR CREDENCIALES DB
+    # =========================
+
+    install -d -m 700 /etc/cloud-app
+
+    ${local.db_credentials_setup}
+
+    chmod 600 /etc/cloud-app/db.env
+
+    # =========================
     # SERVICIO FLASK / GUNICORN
     # =========================
 
@@ -102,7 +139,8 @@ resource "aws_launch_template" "app" {
     Environment="DB_PORT=5432"
     Environment="DB_NAME=${var.db_name}"
     Environment="DB_USER=${var.db_user}"
-    Environment="DB_PASSWORD=${var.db_password}"
+
+    EnvironmentFile=/etc/cloud-app/db.env
 
     ExecStart=/usr/local/bin/gunicorn \
       --workers 2 \

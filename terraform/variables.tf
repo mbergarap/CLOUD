@@ -86,3 +86,14 @@ variable "create_iam_profile" {
   type        = bool
   default     = false
 }
+
+variable "manage_master_user_password" {
+  description = "Permite que RDS administre su contraseña mediante AWS Secrets Manager"
+  type        = bool
+  default     = false
+}
+variable "use_native_s3" {
+  description = "Usar recursos S3 nativos en lugar de AWS CLI"
+  type        = bool
+  default     = false
+}

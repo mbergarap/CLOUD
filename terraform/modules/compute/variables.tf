@@ -104,3 +104,19 @@ variable "instance_profile_name" {
   type        = string
   default     = "LabInstanceProfile"
 }
+
+# =========================
+# SECRETS MANAGER
+# =========================
+
+variable "manage_master_user_password" {
+  description = "Indica si RDS administra la contraseña mediante Secrets Manager"
+  type        = bool
+  default     = false
+}
+
+variable "db_secret_arn" {
+  description = "ARN del secreto de RDS en Secrets Manager"
+  type        = string
+  default     = null
+}

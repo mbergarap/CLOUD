@@ -84,6 +84,37 @@ resource "aws_iam_role_policy" "cloudwatch_logs" {
 }
 
 # =========================
+# PERMISOS SECRETS MANAGER
+# =========================
+
+# Este modulo se utiliza en AWS estandar.
+# No usamos count basado en el ARN, porque
+# RDS genera ese valor durante terraform apply.
+
+resource "aws_iam_role_policy" "secrets_manager" {
+  name = "${var.project_name}-secrets-manager"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+
+        Resource = [
+          var.db_secret_arn
+        ]
+      }
+    ]
+  })
+}
+
+# =========================
 # INSTANCE PROFILE
 # =========================
 

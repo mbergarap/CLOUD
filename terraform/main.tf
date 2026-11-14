@@ -1,4 +1,5 @@
 
+
 # =========================
 # NETWORK
 # =========================
@@ -78,6 +79,12 @@ module "s3" {
 
   app_source_dir = "${path.root}/../app"
   app_zip_path   = "${path.root}/app.zip"
+
+  # AWS Academy: false
+  # AWS estandar: true
+  use_native_s3 = var.use_native_s3
+
+  aws_region = var.aws_region
 }
 
 # =========================
@@ -87,12 +94,14 @@ module "s3" {
 module "iam" {
   source = "./modules/iam"
 
-  # false = reutilizar perfil existente (AWS Academy)
-  # true  = crear rol y perfil IAM (AWS estandar)
+  # AWS Academy: reutiliza LabInstanceProfile.
+  # AWS estandar: crea perfil IAM propio.
   count = var.create_iam_profile ? 1 : 0
 
   project_name    = var.project_name
   app_bucket_name = var.app_bucket_name
+
+  db_secret_arn = module.database.db_secret_arn
 }
 
 # =========================
@@ -111,6 +120,10 @@ module "database" {
 
   db_username = var.db_username
   db_password = var.db_password
+
+  # AWS Academy: false (contrasena configurada).
+  # AWS estandar: true (Secrets Manager).
+  manage_master_user_password = var.manage_master_user_password
 
   deletion_protection = var.rds_deletion_protection
 }
@@ -152,10 +165,12 @@ module "compute" {
 
   app_bucket_name = module.s3.bucket_name
 
-  db_host     = module.database.db_address
-  db_name     = module.database.db_name
-  db_user     = var.db_username
-  db_password = var.db_password
+  db_host                     = module.database.db_address
+  db_name                     = module.database.db_name
+  db_user                     = var.db_username
+  db_password                 = var.db_password
+  manage_master_user_password = var.manage_master_user_password
+  db_secret_arn               = module.database.db_secret_arn
 
   nginx_access_log_group = module.monitoring.nginx_access_log_group
   nginx_error_log_group  = module.monitoring.nginx_error_log_group
@@ -171,7 +186,7 @@ module "compute" {
     : var.ec2_instance_profile_name
   )
 
-  # En el modo AWS estandar, esperar que las politicas
-  # IAM esten creadas antes de lanzar las EC2.
+  # Esperar a que el perfil y las politicas IAM
+  # esten creados antes de lanzar las EC2.
   depends_on = [module.iam]
 }
