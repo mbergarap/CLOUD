@@ -1,8 +1,7 @@
 
-# =========================
 # AMI AMAZON LINUX 2023
-# =========================
 
+# Buscamos la imagen mas reciente de Amazon Linux 2023.
 data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]
@@ -18,51 +17,48 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# =========================
-# CONFIGURACION DE CREDENCIALES
-# =========================
+# CREDENCIALES DE BASE DE DATOS
 
+# Preparamos las credenciales segun el entorno utilizado.
 locals {
-  db_credentials_secrets = <<-SECRETS
+  credenciales_bd_secrets = <<-SECRETS
     aws secretsmanager get-secret-value \
       --region us-east-1 \
-      --secret-id '${coalesce(var.db_secret_arn, "secreto-no-configurado")}' \
+      --secret-id '${coalesce(var.arn_secreto_bd, "secreto-no-configurado")}' \
       --query SecretString \
       --output text \
       | python3 -c 'import json,sys; p=json.load(sys.stdin)["password"]; print("DB_PASSWORD="+json.dumps(p))' \
       > /etc/cloud-app/db.env
   SECRETS
 
-  db_credentials_academy = <<-ACADEMY
+  credenciales_bd_academy = <<-ACADEMY
     cat > /etc/cloud-app/db.env <<'DBENV'
-    DB_PASSWORD=${jsonencode(var.db_password)}
+    DB_PASSWORD=${jsonencode(var.contrasena_bd)}
     DBENV
   ACADEMY
 
-  db_credentials_setup = var.manage_master_user_password ? local.db_credentials_secrets : local.db_credentials_academy
+  configuracion_credenciales_bd = var.administrar_contrasena_maestra ? local.credenciales_bd_secrets : local.credenciales_bd_academy
 }
-# =========================
-# LAUNCH TEMPLATE
-# =========================
 
+# LAUNCH TEMPLATE
+
+# Configuracion utilizada para crear las instancias de aplicacion.
 resource "aws_launch_template" "app" {
-  name_prefix   = "${var.project_name}-app-"
+  name_prefix   = "${var.nombre_proyecto}-app-"
   image_id      = data.aws_ami.amazon_linux.id
   instance_type = "t3.micro"
-  key_name      = var.key_name
+  key_name      = var.nombre_clave_ssh
 
   vpc_security_group_ids = [
-    var.app_sg_id
+    var.id_sg_app
   ]
 
-  # Perfil IAM configurable.
-  # AWS Academy: LabInstanceProfile.
-  # AWS estandar: perfil propio.
-
+  # Perfil IAM de AWS Academy o de una cuenta estandar.
   iam_instance_profile {
-    name = var.instance_profile_name
+    name = var.nombre_perfil_instancia
   }
 
+  # Script que prepara la aplicacion cada vez que inicia una EC2 nueva.
   user_data = base64encode(<<-EOF
     #!/bin/bash
     set -euo pipefail
@@ -93,7 +89,7 @@ resource "aws_launch_template" "app" {
     # =========================
 
     aws s3 cp \
-      s3://${var.app_bucket_name}/app.zip \
+      s3://${var.nombre_bucket_aplicacion}/app.zip \
       /tmp/app.zip
 
     unzip -o \
@@ -119,7 +115,7 @@ resource "aws_launch_template" "app" {
 
     install -d -m 700 /etc/cloud-app
 
-    ${local.db_credentials_setup}
+    ${local.configuracion_credenciales_bd}
 
     chmod 600 /etc/cloud-app/db.env
 
@@ -135,10 +131,10 @@ resource "aws_launch_template" "app" {
     [Service]
     WorkingDirectory=/opt/cloud-app
 
-    Environment="DB_HOST=${var.db_host}"
+    Environment="DB_HOST=${var.servidor_bd}"
     Environment="DB_PORT=5432"
-    Environment="DB_NAME=${var.db_name}"
-    Environment="DB_USER=${var.db_user}"
+    Environment="DB_NAME=${var.nombre_bd}"
+    Environment="DB_USER=${var.usuario_bd}"
 
     EnvironmentFile=/etc/cloud-app/db.env
 
@@ -193,22 +189,22 @@ resource "aws_launch_template" "app" {
             "collect_list": [
               {
                 "file_path": "/var/log/nginx/access.log",
-                "log_group_name": "${var.nginx_access_log_group}",
+                "log_group_name": "${var.grupo_logs_acceso_nginx}",
                 "log_stream_name": "{instance_id}"
               },
               {
                 "file_path": "/var/log/nginx/error.log",
-                "log_group_name": "${var.nginx_error_log_group}",
+                "log_group_name": "${var.grupo_logs_error_nginx}",
                 "log_stream_name": "{instance_id}"
               },
               {
                 "file_path": "/var/log/cloud-app-access.log",
-                "log_group_name": "${var.app_access_log_group}",
+                "log_group_name": "${var.grupo_logs_acceso_app}",
                 "log_stream_name": "{instance_id}"
               },
               {
                 "file_path": "/var/log/cloud-app-error.log",
-                "log_group_name": "${var.app_error_log_group}",
+                "log_group_name": "${var.grupo_logs_error_app}",
                 "log_stream_name": "{instance_id}"
               }
             ]
@@ -247,33 +243,32 @@ resource "aws_launch_template" "app" {
     resource_type = "instance"
 
     tags = {
-      Name = "${var.project_name}-app"
+      Name = "${var.nombre_proyecto}-app"
     }
   }
 
   tags = {
-    Name = "${var.project_name}-launch-template"
+    Name = "${var.nombre_proyecto}-launch-template"
   }
 }
 
-# =========================
 # AUTO SCALING GROUP
-# =========================
 
+# Mantiene dos instancias activas y permite aumentar hasta cuatro.
 resource "aws_autoscaling_group" "app" {
-  name = "${var.project_name}-asg"
+  name = "${var.nombre_proyecto}-asg"
 
   min_size         = 2
   desired_capacity = 2
   max_size         = 4
 
   vpc_zone_identifier = [
-    var.app_subnet_az1_id,
-    var.app_subnet_az2_id
+    var.id_subred_app_az1,
+    var.id_subred_app_az2
   ]
 
   target_group_arns = [
-    var.target_group_arn
+    var.arn_grupo_destino
   ]
 
   health_check_type         = "ELB"
@@ -286,17 +281,16 @@ resource "aws_autoscaling_group" "app" {
 
   tag {
     key                 = "Name"
-    value               = "${var.project_name}-app"
+    value               = "${var.nombre_proyecto}-app"
     propagate_at_launch = true
   }
 }
 
-# =========================
-# AUTO SCALING CPU 60%
-# =========================
+# ESCALADO POR CPU
 
+# Ajusta la cantidad de instancias para mantener la CPU cerca del 60%.
 resource "aws_autoscaling_policy" "cpu_target" {
-  name                   = "${var.project_name}-cpu-60"
+  name                   = "${var.nombre_proyecto}-cpu-60"
   autoscaling_group_name = aws_autoscaling_group.app.name
   policy_type            = "TargetTrackingScaling"
 

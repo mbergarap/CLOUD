@@ -1,99 +1,104 @@
 
-# =========================
 # CONFIGURACION GENERAL
-# =========================
 
-variable "aws_region" {
-  description = "Region de AWS"
+variable "region_aws" {
+  description = "Region donde se despliega la infraestructura."
   type        = string
   default     = "us-east-1"
 }
 
-variable "project_name" {
-  description = "Nombre del proyecto"
+variable "nombre_proyecto" {
+  description = "Nombre utilizado para identificar los recursos."
   type        = string
   default     = "cloud-obligatorio"
 }
 
-# =========================
-# BASE DE DATOS
-# =========================
+# ACCESO SSH
 
-variable "db_username" {
-  description = "Usuario administrador de PostgreSQL"
+variable "cidr_ssh_bastion" {
+  description = "Rango de IP autorizado para acceder al bastion por SSH."
+  type        = string
+}
+
+variable "ruta_clave_publica_ssh" {
+  description = "Ruta de la clave publica SSH."
+  type        = string
+}
+
+variable "id_ami_bastion" {
+  description = "ID de la AMI utilizada por el bastion."
+  type        = string
+}
+
+# BASE DE DATOS
+
+variable "usuario_bd" {
+  description = "Usuario administrador de la base de datos."
   type        = string
   default     = "cloudadmin"
   sensitive   = true
 }
 
-variable "db_password" {
-  description = "Contrasena de PostgreSQL"
+variable "contrasena_bd" {
+  description = "Contrasena de la base de datos."
   type        = string
   sensitive   = true
 }
 
-variable "rds_deletion_protection" {
-  description = "Habilita la proteccion contra eliminacion de RDS"
+variable "administrar_contrasena_maestra_rds" {
+  description = "Permite que RDS administre la contrasena mediante Secrets Manager."
+  type        = bool
+  default     = false
+}
+
+variable "proteccion_eliminacion_rds" {
+  description = "Habilita la proteccion contra eliminacion de RDS."
   type        = bool
   default     = true
 }
 
-# =========================
+# ALMACENAMIENTO S3
+
+variable "nombre_bucket_aplicacion" {
+  description = "Nombre del bucket que almacena la aplicacion."
+  type        = string
+}
+
+variable "usar_s3_nativo" {
+  description = "Indica si Terraform administra el bucket mediante el proveedor AWS."
+  type        = bool
+  default     = false
+}
+
+# PERMISOS IAM
+
+variable "crear_perfil_iam" {
+  description = "Indica si Terraform debe crear el perfil IAM."
+  type        = bool
+  default     = false
+}
+
+variable "nombre_perfil_iam_ec2" {
+  description = "Nombre del perfil IAM utilizado por las instancias EC2."
+  type        = string
+}
+
 # MONITOREO
-# =========================
 
-variable "alert_email" {
-  description = "Correo que recibira las alertas de CloudWatch"
+variable "correo_alertas" {
+  description = "Correo electronico para recibir alertas."
   type        = string
 }
 
-# =========================
-# BASTION Y SSH
-# =========================
+# KUBERNETES K3S
 
-variable "ssh_public_key_path" {
-  description = "Ruta local a la clave publica SSH"
-  type        = string
-}
-
-variable "bastion_ami_id" {
-  description = "AMI utilizada por el Bastion Host"
-  type        = string
-}
-
-# =========================
-# S3 APLICACION
-# =========================
-
-variable "app_bucket_name" {
-  description = "Nombre unico del bucket S3 de la aplicacion"
-  type        = string
-}
-
-# =========================
-# IAM EC2
-# =========================
-
-variable "ec2_instance_profile_name" {
-  description = "Nombre del perfil IAM utilizado por las EC2"
-  type        = string
-  default     = "LabInstanceProfile"
-}
-
-
-variable "create_iam_profile" {
-  description = "Crear un perfil IAM propio o reutilizar uno existente"
+variable "habilitar_k3s" {
+  description = "Indica si se despliega el cluster K3s."
   type        = bool
-  default     = false
+  default     = true
 }
 
-variable "manage_master_user_password" {
-  description = "Permite que RDS administre su contraseña mediante AWS Secrets Manager"
-  type        = bool
-  default     = false
-}
-variable "use_native_s3" {
-  description = "Usar recursos S3 nativos en lugar de AWS CLI"
-  type        = bool
-  default     = false
+variable "nombre_perfil_iam_k3s" {
+  description = "Nombre del perfil IAM utilizado por las instancias K3s."
+  type        = string
 }

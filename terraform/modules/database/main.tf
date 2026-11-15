@@ -1,41 +1,38 @@
 
-# =========================
-# DB SUBNET GROUP
-# =========================
+# SUBREDES DE BASE DE DATOS
 
+# Agrupa las dos subredes privadas donde funciona RDS.
 resource "aws_db_subnet_group" "main" {
-  name = "${var.project_name}-db-subnet-group"
+  name = "${var.nombre_proyecto}-db-subnet-group"
 
   subnet_ids = [
-    var.db_subnet_az1_id,
-    var.db_subnet_az2_id
+    var.id_subred_bd_az1,
+    var.id_subred_bd_az2
   ]
 
   tags = {
-    Name = "${var.project_name}-db-subnet-group"
+    Name = "${var.nombre_proyecto}-db-subnet-group"
   }
 }
 
-# =========================
-# SUFIJO UNICO SNAPSHOT
-# =========================
+# SNAPSHOT FINAL
 
+# Genera un identificador para evitar repetir nombres de snapshots.
 resource "random_id" "snapshot_suffix" {
   byte_length = 4
 
   keepers = {
-    db_identifier = "${var.project_name}-rds"
+    db_identifier = "${var.nombre_proyecto}-rds"
   }
 }
 
-# =========================
-# RDS - AWS ACADEMY
-# =========================
+# RDS EN AWS ACADEMY
 
+# PostgreSQL con credenciales configuradas desde Terraform.
 resource "aws_db_instance" "academy" {
-  count = var.manage_master_user_password ? 0 : 1
+  count = var.administrar_contrasena_maestra ? 0 : 1
 
-  identifier = "${var.project_name}-rds"
+  identifier = "${var.nombre_proyecto}-rds"
 
   engine         = "postgres"
   engine_version = "16"
@@ -45,8 +42,8 @@ resource "aws_db_instance" "academy" {
   storage_type      = "gp3"
 
   db_name  = "cloudapp"
-  username = var.db_username
-  password = var.db_password
+  username = var.usuario_bd
+  password = var.contrasena_bd
 
   port = 5432
 
@@ -56,31 +53,30 @@ resource "aws_db_instance" "academy" {
   db_subnet_group_name = aws_db_subnet_group.main.name
 
   vpc_security_group_ids = [
-    var.rds_sg_id
+    var.id_sg_rds
   ]
 
   backup_retention_period = 7
-  deletion_protection     = var.deletion_protection
+  deletion_protection     = var.proteccion_eliminacion
 
   skip_final_snapshot = false
 
-  final_snapshot_identifier = "${var.project_name}-final-${random_id.snapshot_suffix.hex}"
+  final_snapshot_identifier = "${var.nombre_proyecto}-final-${random_id.snapshot_suffix.hex}"
 
   storage_encrypted = true
 
   tags = {
-    Name = "${var.project_name}-rds"
+    Name = "${var.nombre_proyecto}-rds"
   }
 }
 
-# =========================
-# RDS - AWS ESTANDAR
-# =========================
+# RDS EN AWS ESTANDAR
 
+# Alternativa donde RDS administra la contrasena con Secrets Manager.
 resource "aws_db_instance" "managed" {
-  count = var.manage_master_user_password ? 1 : 0
+  count = var.administrar_contrasena_maestra ? 1 : 0
 
-  identifier = "${var.project_name}-rds"
+  identifier = "${var.nombre_proyecto}-rds"
 
   engine         = "postgres"
   engine_version = "16"
@@ -90,9 +86,9 @@ resource "aws_db_instance" "managed" {
   storage_type      = "gp3"
 
   db_name  = "cloudapp"
-  username = var.db_username
+  username = var.usuario_bd
 
-  # RDS administra la contraseña en Secrets Manager.
+  # La contrasena se administra mediante Secrets Manager.
   manage_master_user_password = true
 
   port = 5432
@@ -103,19 +99,19 @@ resource "aws_db_instance" "managed" {
   db_subnet_group_name = aws_db_subnet_group.main.name
 
   vpc_security_group_ids = [
-    var.rds_sg_id
+    var.id_sg_rds
   ]
 
   backup_retention_period = 7
-  deletion_protection     = var.deletion_protection
+  deletion_protection     = var.proteccion_eliminacion
 
   skip_final_snapshot = false
 
-  final_snapshot_identifier = "${var.project_name}-final-${random_id.snapshot_suffix.hex}"
+  final_snapshot_identifier = "${var.nombre_proyecto}-final-${random_id.snapshot_suffix.hex}"
 
   storage_encrypted = true
 
   tags = {
-    Name = "${var.project_name}-rds"
+    Name = "${var.nombre_proyecto}-rds"
   }
 }

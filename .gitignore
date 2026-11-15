@@ -1,9 +1,11 @@
+
 # Terraform
 **/.terraform/
 *.tfstate
 *.tfstate.*
 *.tfvars
 *.tfplan
+*.tfplan.*
 crash.log
 crash.*.log
 override.tf
@@ -11,8 +13,18 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
-# Respaldos y archivos generados
+# Respaldos y archivos temporales
+*.bak
+*.tf.respaldo
+*.backup
+Backup-*/
+backups-*/
 state-backup*.json
+revision_plan.txt
+plan.txt
+userdata-*.sh
+
+# Archivos generados
 app.zip
 s3-encryption.json
 
@@ -35,21 +47,7 @@ venv/
 # Sistema operativo
 .DS_Store
 Thumbs.db
-# Planes de Terraform
-plan.txt
 
-# Planes de Terraform
-plan.txt
-
-
-
-# Archivos temporales de validacion
-userdata-*.sh
-*.tfplan
-*.tfplan.*
-# Respaldos locales de Terraform
-*.tf.respaldo
-
-# Respaldos del README
+# Respaldos de documentacion
 README.md.respaldo
 README.md.antes-de-corregir

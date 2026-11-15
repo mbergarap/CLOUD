@@ -1,15 +1,28 @@
-output "alb_arn" {
-  value = aws_lb.main.arn
+
+# BALANCEADOR DE CARGA
+
+# ARN del balanceador de carga.
+output "arn_alb" {
+  description = "ARN del balanceador de carga."
+  value       = aws_lb.main.arn
 }
 
-output "alb_dns_name" {
-  value = aws_lb.main.dns_name
+# Direccion DNS que AWS asigna al ALB.
+output "nombre_dns_alb" {
+  description = "Nombre DNS publico del balanceador."
+  value       = aws_lb.main.dns_name
 }
 
-output "target_group_arn" {
-  value = aws_lb_target_group.app.arn
+# TARGET GROUP
+
+# ARN del grupo de instancias que recibe el trafico.
+output "arn_grupo_destino" {
+  description = "ARN del Target Group de la aplicacion."
+  value       = aws_lb_target_group.app.arn
 }
 
-output "target_group_name" {
-  value = aws_lb_target_group.app.name
+# Nombre del Target Group creado en AWS.
+output "nombre_grupo_destino" {
+  description = "Nombre del Target Group de la aplicacion."
+  value       = aws_lb_target_group.app.name
 }

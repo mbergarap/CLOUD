@@ -1,192 +1,229 @@
 
-
-# =========================
 # NETWORK
-# =========================
 
+# Red principal, dividida en subredes publicas y privadas en dos zonas.
 module "network" {
   source = "./modules/network"
 
-  project_name = var.project_name
+  nombre_proyecto = var.nombre_proyecto
 
-  vpc_cidr = "192.168.0.0/16"
+  cidr_vpc = "192.168.0.0/16"
 
-  az1 = "us-east-1a"
-  az2 = "us-east-1b"
+  zona_disponibilidad_1 = "us-east-1a"
+  zona_disponibilidad_2 = "us-east-1b"
 
-  public_subnet_az1_cidr = "192.168.1.0/24"
-  public_subnet_az2_cidr = "192.168.2.0/24"
+  cidr_subred_publica_az1 = "192.168.1.0/24"
+  cidr_subred_publica_az2 = "192.168.2.0/24"
 
-  app_subnet_az1_cidr = "192.168.10.0/24"
-  app_subnet_az2_cidr = "192.168.20.0/24"
+  cidr_subred_app_az1 = "192.168.10.0/24"
+  cidr_subred_app_az2 = "192.168.20.0/24"
 
-  db_subnet_az1_cidr = "192.168.30.0/24"
-  db_subnet_az2_cidr = "192.168.40.0/24"
+  cidr_subred_bd_az1 = "192.168.30.0/24"
+  cidr_subred_bd_az2 = "192.168.40.0/24"
 }
 
-# =========================
 # SECURITY GROUPS
-# =========================
 
+# Reglas de acceso para controlar la comunicacion entre los componentes.
 module "security" {
   source = "./modules/security"
 
-  project_name = var.project_name
-  vpc_id       = module.network.vpc_id
+  nombre_proyecto  = var.nombre_proyecto
+  id_vpc           = module.network.id_vpc
+  cidr_ssh_bastion = var.cidr_ssh_bastion
 }
 
-# =========================
 # BASTION
-# =========================
 
+# Servidor de acceso SSH para administrar las instancias privadas.
 module "bastion" {
   source = "./modules/bastion"
 
-  project_name = var.project_name
+  nombre_proyecto = var.nombre_proyecto
 
-  public_subnet_id = module.network.public_subnet_az1_id
-  bastion_sg_id    = module.security.bastion_sg_id
+  id_subred_publica = module.network.id_subred_publica_az1
+  id_sg_bastion     = module.security.id_sg_bastion
 
-  public_key_path = var.ssh_public_key_path
-  ami_id          = var.bastion_ami_id
+  ruta_clave_publica_ssh = var.ruta_clave_publica_ssh
+  id_ami                 = var.id_ami_bastion
 }
 
-# =========================
-# APPLICATION LOAD BALANCER
-# =========================
+# BALANCEADOR DE CARGA
 
+# Recibe las solicitudes HTTP y las distribuye entre las instancias APP.
 module "alb" {
   source = "./modules/alb"
 
-  project_name = var.project_name
-  vpc_id       = module.network.vpc_id
+  nombre_proyecto = var.nombre_proyecto
+  id_vpc          = module.network.id_vpc
 
-  public_subnet_az1_id = module.network.public_subnet_az1_id
-  public_subnet_az2_id = module.network.public_subnet_az2_id
+  id_subred_publica_az1 = module.network.id_subred_publica_az1
+  id_subred_publica_az2 = module.network.id_subred_publica_az2
 
-  alb_sg_id = module.security.alb_sg_id
+  id_sg_alb = module.security.id_sg_alb
 }
 
-# =========================
 # S3 APLICACION
-# =========================
 
+# Guarda el archivo ZIP utilizado para desplegar la aplicacion.
 module "s3" {
   source = "./modules/s3"
 
-  project_name = var.project_name
-  bucket_name  = var.app_bucket_name
+  nombre_proyecto       = var.nombre_proyecto
+  nombre_bucket         = var.nombre_bucket_aplicacion
+  directorio_aplicacion = "${path.root}/../app"
+  ruta_zip_aplicacion   = "${path.root}/app.zip"
 
-  app_source_dir = "${path.root}/../app"
-  app_zip_path   = "${path.root}/app.zip"
+  # En AWS Academy usamos el metodo compatible con el laboratorio.
+  usar_s3_nativo = var.usar_s3_nativo
 
-  # AWS Academy: false
-  # AWS estandar: true
-  use_native_s3 = var.use_native_s3
-
-  aws_region = var.aws_region
+  region_aws = var.region_aws
 }
 
-# =========================
-# IAM - PERFIL OPCIONAL PARA EC2
-# =========================
+# IAM
 
 module "iam" {
   source = "./modules/iam"
+  count  = var.crear_perfil_iam ? 1 : 0
 
-  # AWS Academy: reutiliza LabInstanceProfile.
-  # AWS estandar: crea perfil IAM propio.
-  count = var.create_iam_profile ? 1 : 0
+  nombre_proyecto          = var.nombre_proyecto
+  nombre_bucket_aplicacion = var.nombre_bucket_aplicacion
 
-  project_name    = var.project_name
-  app_bucket_name = var.app_bucket_name
-
-  db_secret_arn = module.database.db_secret_arn
+  arn_secreto_bd = module.database.arn_secreto_bd
 }
 
-# =========================
-# DATABASE
-# =========================
+# BASE DE DATOS
 
+# PostgreSQL RDS en las subredes privadas de ambas zonas.
 module "database" {
   source = "./modules/database"
 
-  project_name = var.project_name
+  nombre_proyecto = var.nombre_proyecto
 
-  db_subnet_az1_id = module.network.db_subnet_az1_id
-  db_subnet_az2_id = module.network.db_subnet_az2_id
+  id_subred_bd_az1 = module.network.id_subred_bd_az1
+  id_subred_bd_az2 = module.network.id_subred_bd_az2
 
-  rds_sg_id = module.security.rds_sg_id
+  id_sg_rds = module.security.id_sg_rds
 
-  db_username = var.db_username
-  db_password = var.db_password
+  usuario_bd    = var.usuario_bd
+  contrasena_bd = var.contrasena_bd
 
-  # AWS Academy: false (contrasena configurada).
-  # AWS estandar: true (Secrets Manager).
-  manage_master_user_password = var.manage_master_user_password
+  # En AWS Academy utilizamos la contrasena configurada.
+  # En una cuenta estandar podemos administrarla con Secrets Manager.
+  administrar_contrasena_maestra = var.administrar_contrasena_maestra_rds
 
-  deletion_protection = var.rds_deletion_protection
+  proteccion_eliminacion = var.proteccion_eliminacion_rds
 }
 
-# =========================
-# MONITORING
-# =========================
+# MONITOREO
 
+# Registros, metricas y alertas de la aplicacion y la base de datos.
 module "monitoring" {
   source = "./modules/monitoring"
 
-  project_name = var.project_name
-  alert_email  = var.alert_email
+  nombre_proyecto = var.nombre_proyecto
+  correo_alertas  = var.correo_alertas
 
-  # Nombre conocido para evitar dependencia circular
-  # entre compute y monitoring.
-  asg_name = "${var.project_name}-asg"
+  # Definimos el nombre del ASG para evitar una dependencia circular.
+  nombre_asg = "${var.nombre_proyecto}-asg"
 
-  db_instance_identifier = module.database.db_instance_identifier
+  identificador_instancia_bd = module.database.identificador_instancia_bd
 }
 
-# =========================
-# COMPUTE / AUTO SCALING
-# =========================
+# SERVIDORES DE APLICACION
 
+# Instancias EC2 administradas por Auto Scaling y conectadas al ALB.
 module "compute" {
   source = "./modules/compute"
 
-  project_name = var.project_name
+  nombre_proyecto = var.nombre_proyecto
 
-  app_subnet_az1_id = module.network.app_subnet_az1_id
-  app_subnet_az2_id = module.network.app_subnet_az2_id
+  id_subred_app_az1 = module.network.id_subred_app_az1
+  id_subred_app_az2 = module.network.id_subred_app_az2
 
-  app_sg_id = module.security.app_sg_id
+  id_sg_app = module.security.id_sg_app
 
-  key_name = module.bastion.key_name
+  nombre_clave_ssh = module.bastion.nombre_clave_ssh
 
-  target_group_arn = module.alb.target_group_arn
+  arn_grupo_destino = module.alb.arn_grupo_destino
 
-  app_bucket_name = module.s3.bucket_name
+  nombre_bucket_aplicacion = module.s3.nombre_bucket
 
-  db_host                     = module.database.db_address
-  db_name                     = module.database.db_name
-  db_user                     = var.db_username
-  db_password                 = var.db_password
-  manage_master_user_password = var.manage_master_user_password
-  db_secret_arn               = module.database.db_secret_arn
+  servidor_bd                    = module.database.direccion_bd
+  nombre_bd                      = module.database.nombre_bd
+  usuario_bd                     = var.usuario_bd
+  contrasena_bd                  = var.contrasena_bd
+  administrar_contrasena_maestra = var.administrar_contrasena_maestra_rds
+  arn_secreto_bd                 = module.database.arn_secreto_bd
 
-  nginx_access_log_group = module.monitoring.nginx_access_log_group
-  nginx_error_log_group  = module.monitoring.nginx_error_log_group
+  grupo_logs_acceso_nginx = module.monitoring.grupo_logs_acceso_nginx
+  grupo_logs_error_nginx  = module.monitoring.grupo_logs_error_nginx
 
-  app_access_log_group = module.monitoring.app_access_log_group
-  app_error_log_group  = module.monitoring.app_error_log_group
+  grupo_logs_acceso_app = module.monitoring.grupo_logs_acceso_app
+  grupo_logs_error_app  = module.monitoring.grupo_logs_error_app
 
-  # AWS Academy: LabInstanceProfile.
-  # AWS estandar: perfil creado por el modulo IAM.
-  instance_profile_name = (
-    var.create_iam_profile
-    ? module.iam[0].instance_profile_name
-    : var.ec2_instance_profile_name
+  # Elegimos el perfil IAM segun el entorno donde se despliega.
+  nombre_perfil_instancia = (
+    var.crear_perfil_iam
+    ? module.iam[0].nombre_perfil_instancia
+    : var.nombre_perfil_iam_ec2
   )
 
-  # Esperar a que el perfil y las politicas IAM
-  # esten creados antes de lanzar las EC2.
-  depends_on = [module.iam]
+  # Esperamos a que IAM y S3 esten preparados antes de lanzar las EC2.
+  depends_on = [module.iam, module.s3]
+}
+
+# KUBERNETES K3S
+
+# Cluster K3s opcional, con sus nodos dentro de las subredes privadas.
+module "k3s" {
+  source = "./modules/k3s"
+  count  = var.habilitar_k3s ? 1 : 0
+
+  nombre_proyecto = var.nombre_proyecto
+
+  id_vpc            = module.network.id_vpc
+  id_subred_app_az1 = module.network.id_subred_app_az1
+  id_subred_app_az2 = module.network.id_subred_app_az2
+
+  id_sg_bastion           = module.security.id_sg_bastion
+  nombre_clave_ssh        = module.bastion.nombre_clave_ssh
+  nombre_perfil_instancia = var.nombre_perfil_iam_k3s
+}
+
+# SALIDAS DEL BASTION
+
+# Permite que el Bastion se conecte a Internet por HTTPS.
+resource "aws_vpc_security_group_egress_rule" "bastion_https" {
+  security_group_id = module.security.id_sg_bastion
+
+  description = "HTTPS hacia Internet"
+  ip_protocol = "tcp"
+  from_port   = 443
+  to_port     = 443
+  cidr_ipv4   = "0.0.0.0/0"
+}
+
+# Permite acceder por SSH desde el Bastion a las instancias APP.
+resource "aws_vpc_security_group_egress_rule" "bastion_ssh_app" {
+  security_group_id = module.security.id_sg_bastion
+
+  description                  = "SSH hacia APP"
+  ip_protocol                  = "tcp"
+  from_port                    = 22
+  to_port                      = 22
+  referenced_security_group_id = module.security.id_sg_app
+}
+
+# Permite acceder por SSH desde el Bastion a los nodos K3s.
+resource "aws_vpc_security_group_egress_rule" "bastion_ssh_k3s" {
+  count = var.habilitar_k3s ? 1 : 0
+
+  security_group_id = module.security.id_sg_bastion
+
+  description                  = "SSH hacia K3s"
+  ip_protocol                  = "tcp"
+  from_port                    = 22
+  to_port                      = 22
+  referenced_security_group_id = module.k3s[0].id_sg_k3s
 }

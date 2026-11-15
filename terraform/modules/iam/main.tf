@@ -1,10 +1,9 @@
 
-# =========================
-# IAM ROLE PARA EC2
-# =========================
+# ROL IAM PARA EC2
 
+# Rol que permite a las instancias EC2 utilizar los permisos definidos.
 resource "aws_iam_role" "ec2_role" {
-  name = "${var.project_name}-ec2-role"
+  name = "${var.nombre_proyecto}-ec2-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -23,16 +22,15 @@ resource "aws_iam_role" "ec2_role" {
   })
 
   tags = {
-    Name = "${var.project_name}-ec2-role"
+    Name = "${var.nombre_proyecto}-ec2-role"
   }
 }
 
-# =========================
-# PERMISOS S3
-# =========================
+# ACCESO A S3
 
+# Permite descargar solamente app.zip del bucket de la aplicacion.
 resource "aws_iam_role_policy" "s3_access" {
-  name = "${var.project_name}-s3-access"
+  name = "${var.nombre_proyecto}-s3-access"
   role = aws_iam_role.ec2_role.id
 
   policy = jsonencode({
@@ -47,19 +45,18 @@ resource "aws_iam_role_policy" "s3_access" {
         ]
 
         Resource = [
-          "arn:aws:s3:::${var.app_bucket_name}/app.zip"
+          "arn:aws:s3:::${var.nombre_bucket_aplicacion}/app.zip"
         ]
       }
     ]
   })
 }
 
-# =========================
-# PERMISOS CLOUDWATCH LOGS
-# =========================
+# CLOUDWATCH LOGS
 
+# Permite enviar y consultar los registros de la aplicacion.
 resource "aws_iam_role_policy" "cloudwatch_logs" {
-  name = "${var.project_name}-cloudwatch-logs"
+  name = "${var.nombre_proyecto}-cloudwatch-logs"
   role = aws_iam_role.ec2_role.id
 
   policy = jsonencode({
@@ -76,23 +73,19 @@ resource "aws_iam_role_policy" "cloudwatch_logs" {
         ]
 
         Resource = [
-          "arn:aws:logs:*:*:log-group:/${var.project_name}/*"
+          "arn:aws:logs:*:*:log-group:/${var.nombre_proyecto}/*"
         ]
       }
     ]
   })
 }
 
-# =========================
-# PERMISOS SECRETS MANAGER
-# =========================
+# SECRETS MANAGER
 
-# Este modulo se utiliza en AWS estandar.
-# No usamos count basado en el ARN, porque
-# RDS genera ese valor durante terraform apply.
-
+# Permite obtener el secreto de RDS cuando usamos IAM propio.
+# No condicionamos este recurso al ARN porque RDS lo genera durante el despliegue.
 resource "aws_iam_role_policy" "secrets_manager" {
-  name = "${var.project_name}-secrets-manager"
+  name = "${var.nombre_proyecto}-secrets-manager"
   role = aws_iam_role.ec2_role.id
 
   policy = jsonencode({
@@ -107,22 +100,21 @@ resource "aws_iam_role_policy" "secrets_manager" {
         ]
 
         Resource = [
-          var.db_secret_arn
+          var.arn_secreto_bd
         ]
       }
     ]
   })
 }
 
-# =========================
-# INSTANCE PROFILE
-# =========================
+# PERFIL IAM PARA EC2
 
+# Asocia el rol IAM con las instancias mediante un Instance Profile.
 resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "${var.project_name}-instance-profile"
+  name = "${var.nombre_proyecto}-instance-profile"
   role = aws_iam_role.ec2_role.name
 
   tags = {
-    Name = "${var.project_name}-instance-profile"
+    Name = "${var.nombre_proyecto}-instance-profile"
   }
 }

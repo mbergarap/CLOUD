@@ -1,7 +1,12 @@
-output "bucket_name" {
-  value = var.bucket_name
+
+# Nombre del bucket donde se almacena la aplicacion.
+output "nombre_bucket" {
+  description = "Nombre del bucket S3 de la aplicacion."
+  value       = var.nombre_bucket
 }
 
-output "bucket_arn" {
-  value = "arn:aws:s3:::${var.bucket_name}"
+# ARN del bucket, utilizado para identificarlo en AWS.
+output "arn_bucket" {
+  description = "ARN del bucket S3 de la aplicacion."
+  value       = "arn:aws:s3:::${var.nombre_bucket}"
 }

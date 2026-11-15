@@ -1,42 +1,44 @@
 
-# =========================
-# OUTPUTS DATABASE
-# =========================
+# DATOS DE LA BASE DE DATOS
 
-# AWS Academy utiliza academy[0].
-# AWS estandar utiliza managed[0].
+# En AWS Academy utilizamos academy[0].
+# En AWS estandar utilizamos managed[0].
 
-output "db_address" {
-  description = "Direccion privada de RDS"
+# Direccion privada para conectarse a PostgreSQL.
+output "direccion_bd" {
+  description = "Direccion de conexion a PostgreSQL RDS."
   value = (
-    var.manage_master_user_password
+    var.administrar_contrasena_maestra
     ? aws_db_instance.managed[0].address
     : aws_db_instance.academy[0].address
   )
 }
 
-output "db_name" {
-  description = "Nombre de la base de datos"
+# Nombre de la base de datos creada en RDS.
+output "nombre_bd" {
+  description = "Nombre de la base de datos PostgreSQL."
   value = (
-    var.manage_master_user_password
+    var.administrar_contrasena_maestra
     ? aws_db_instance.managed[0].db_name
     : aws_db_instance.academy[0].db_name
   )
 }
 
-output "db_instance_identifier" {
-  description = "Identificador de RDS para CloudWatch"
+# Identificador utilizado para monitorear RDS desde CloudWatch.
+output "identificador_instancia_bd" {
+  description = "Identificador de la instancia RDS."
   value = (
-    var.manage_master_user_password
+    var.administrar_contrasena_maestra
     ? aws_db_instance.managed[0].identifier
     : aws_db_instance.academy[0].identifier
   )
 }
 
-output "db_secret_arn" {
-  description = "ARN del secreto administrado por RDS"
+# ARN del secreto cuando RDS administra la contrasena.
+output "arn_secreto_bd" {
+  description = "ARN del secreto de PostgreSQL en Secrets Manager."
   value = (
-    var.manage_master_user_password
+    var.administrar_contrasena_maestra
     ? aws_db_instance.managed[0].master_user_secret[0].secret_arn
     : null
   )

@@ -1,30 +1,28 @@
-# =========================
-# KEY PAIR
-# =========================
 
+# CLAVE SSH
+
+# Registramos la clave publica que usamos para acceder a las instancias.
 resource "aws_key_pair" "bastion_key" {
-  key_name   = "${var.project_name}-key"
-  public_key = file(var.public_key_path)
+  key_name   = "${var.nombre_proyecto}-key"
+  public_key = file(var.ruta_clave_publica_ssh)
 
   tags = {
-    Name = "${var.project_name}-key"
+    Name = "${var.nombre_proyecto}-key"
   }
 }
 
-# =========================
-# BASTION HOST
-# =========================
+# BASTION
 
+# Instancia que utilizamos para conectarnos por SSH a los servidores privados.
 resource "aws_instance" "bastion" {
-  # AMI fija para evitar que Terraform reemplace el bastion
-  # cada vez que AWS publique una nueva Amazon Linux 2023.
-  ami           = var.ami_id
+  # Usamos una AMI fija para evitar reemplazos al publicarse nuevas versiones.
+  ami           = var.id_ami
   instance_type = "t3.micro"
 
-  subnet_id = var.public_subnet_id
+  subnet_id = var.id_subred_publica
 
   vpc_security_group_ids = [
-    var.bastion_sg_id
+    var.id_sg_bastion
   ]
 
   key_name = aws_key_pair.bastion_key.key_name
@@ -32,6 +30,6 @@ resource "aws_instance" "bastion" {
   associate_public_ip_address = true
 
   tags = {
-    Name = "${var.project_name}-bastion"
+    Name = "${var.nombre_proyecto}-bastion"
   }
 }

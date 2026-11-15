@@ -1,122 +1,121 @@
 
-# =========================
 # CONFIGURACION GENERAL
-# =========================
 
-variable "project_name" {
-  description = "Nombre del proyecto"
+# Nombre utilizado para identificar los recursos de la aplicacion.
+variable "nombre_proyecto" {
+  description = "Nombre del proyecto."
   type        = string
 }
 
-# =========================
 # RED Y SEGURIDAD
-# =========================
 
-variable "app_subnet_az1_id" {
-  description = "ID de la subred privada de aplicaciones en AZ1"
+# Subredes privadas donde se ejecutan las instancias EC2.
+variable "id_subred_app_az1" {
+  description = "ID de la subred de aplicacion de AZ1."
   type        = string
 }
 
-variable "app_subnet_az2_id" {
-  description = "ID de la subred privada de aplicaciones en AZ2"
+variable "id_subred_app_az2" {
+  description = "ID de la subred de aplicacion de AZ2."
   type        = string
 }
 
-variable "app_sg_id" {
-  description = "ID del Security Group de las EC2 de aplicacion"
+# Security Group utilizado por las instancias de aplicacion.
+variable "id_sg_app" {
+  description = "ID del Security Group de las EC2 de aplicacion."
   type        = string
 }
 
-variable "key_name" {
-  description = "Nombre de la clave SSH de las instancias EC2"
+# Clave SSH utilizada para administrar las instancias.
+variable "nombre_clave_ssh" {
+  description = "Nombre de la clave SSH registrada en AWS."
   type        = string
 }
 
-variable "target_group_arn" {
-  description = "ARN del Target Group del Application Load Balancer"
+# Grupo de destino donde el ALB envia las solicitudes.
+variable "arn_grupo_destino" {
+  description = "ARN del Target Group del balanceador."
   type        = string
 }
 
-# =========================
-# S3 APLICACION
-# =========================
+# ALMACENAMIENTO S3
 
-variable "app_bucket_name" {
-  description = "Nombre del bucket S3 que contiene la aplicacion Flask"
+# Bucket que contiene el archivo app.zip.
+variable "nombre_bucket_aplicacion" {
+  description = "Nombre del bucket S3 de la aplicacion."
   type        = string
 }
 
-# =========================
 # BASE DE DATOS
-# =========================
 
-variable "db_host" {
-  description = "Direccion de la base de datos PostgreSQL"
+# Direccion utilizada para conectarse a PostgreSQL.
+variable "servidor_bd" {
+  description = "Direccion de PostgreSQL RDS."
   type        = string
 }
 
-variable "db_name" {
-  description = "Nombre de la base de datos"
+variable "nombre_bd" {
+  description = "Nombre de la base de datos."
   type        = string
 }
 
-variable "db_user" {
-  description = "Usuario de PostgreSQL"
+variable "usuario_bd" {
+  description = "Usuario de PostgreSQL."
   type        = string
 }
 
-variable "db_password" {
-  description = "Contrasena de PostgreSQL"
+# Contrasena utilizada para la conexion con PostgreSQL.
+variable "contrasena_bd" {
+  description = "Contrasena de PostgreSQL."
   type        = string
   sensitive   = true
 }
 
-# =========================
 # CLOUDWATCH LOGS
-# =========================
 
-variable "nginx_access_log_group" {
-  description = "Grupo CloudWatch para logs de acceso de Nginx"
+# Grupos donde se almacenan los registros de Nginx.
+variable "grupo_logs_acceso_nginx" {
+  description = "Grupo de registros de acceso de Nginx."
   type        = string
 }
 
-variable "nginx_error_log_group" {
-  description = "Grupo CloudWatch para logs de error de Nginx"
+variable "grupo_logs_error_nginx" {
+  description = "Grupo de registros de errores de Nginx."
   type        = string
 }
 
-variable "app_access_log_group" {
-  description = "Grupo CloudWatch para logs de acceso de la aplicacion"
+# Grupos donde se almacenan los registros de la aplicacion.
+variable "grupo_logs_acceso_app" {
+  description = "Grupo de registros de acceso de la aplicacion."
   type        = string
 }
 
-variable "app_error_log_group" {
-  description = "Grupo CloudWatch para logs de error de la aplicacion"
+variable "grupo_logs_error_app" {
+  description = "Grupo de registros de errores de la aplicacion."
   type        = string
 }
 
-# =========================
 # IAM
-# =========================
 
-variable "instance_profile_name" {
-  description = "Nombre del Instance Profile IAM asociado a las EC2"
+# Perfil IAM asociado a las instancias EC2.
+variable "nombre_perfil_instancia" {
+  description = "Nombre del Instance Profile utilizado por las EC2."
   type        = string
   default     = "LabInstanceProfile"
 }
 
-# =========================
 # SECRETS MANAGER
-# =========================
 
-variable "manage_master_user_password" {
-  description = "Indica si RDS administra la contraseña mediante Secrets Manager"
+# Indica si RDS administra la contrasena mediante Secrets Manager.
+variable "administrar_contrasena_maestra" {
+  description = "Permite utilizar una contrasena administrada por RDS."
   type        = bool
   default     = false
 }
 
-variable "db_secret_arn" {
-  description = "ARN del secreto de RDS en Secrets Manager"
+# ARN del secreto utilizado para obtener las credenciales.
+variable "arn_secreto_bd" {
+  description = "ARN del secreto de PostgreSQL en Secrets Manager."
   type        = string
   default     = null
 }
