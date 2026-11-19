@@ -1,28 +1,6 @@
 
 # REGISTROS CLOUDWATCH
 
-# Guardamos los registros de acceso y errores de Nginx durante 7 dias.
-resource "aws_cloudwatch_log_group" "nginx_access" {
-  name              = "/${var.nombre_proyecto}/nginx/access"
-  retention_in_days = 7
-}
-
-resource "aws_cloudwatch_log_group" "nginx_error" {
-  name              = "/${var.nombre_proyecto}/nginx/error"
-  retention_in_days = 7
-}
-
-# Registros de acceso y errores de la aplicacion.
-resource "aws_cloudwatch_log_group" "app_access" {
-  name              = "/${var.nombre_proyecto}/app/access"
-  retention_in_days = 7
-}
-
-resource "aws_cloudwatch_log_group" "app_error" {
-  name              = "/${var.nombre_proyecto}/app/error"
-  retention_in_days = 7
-}
-
 # NOTIFICACIONES SNS
 
 # Tema SNS utilizado para enviar las alertas.

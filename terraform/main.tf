@@ -199,14 +199,3 @@ resource "aws_vpc_security_group_egress_rule" "alb_hacia_k3s" {
   to_port                      = 30080
   referenced_security_group_id = module.k3s[0].id_sg_k3s
 }
-
-# ARCHIVO HISTORICO DE FLASK
-
-# Deja de administrar app.zip sin eliminar el archivo del bucket S3.
-removed {
-  from = module.s3.aws_s3_object.app
-
-  lifecycle {
-    destroy = false
-  }
-}
