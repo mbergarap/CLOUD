@@ -69,8 +69,8 @@ module "alb" {
 module "s3" {
   source = "./modules/s3"
 
-  nombre_proyecto       = var.nombre_proyecto
-  nombre_bucket         = var.nombre_bucket_aplicacion
+  nombre_proyecto = var.nombre_proyecto
+  nombre_bucket   = var.nombre_bucket_aplicacion
 
 
   # En AWS Academy usamos el metodo compatible con el laboratorio.
