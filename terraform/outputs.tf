@@ -30,17 +30,7 @@ output "arn_alb" {
   value       = module.alb.arn_alb
 }
 
-# AUTO SCALING
 
-output "nombre_grupo_autoescalado" {
-  description = "Nombre del Auto Scaling Group."
-  value       = module.compute.nombre_grupo_autoescalado
-}
-
-output "id_plantilla_lanzamiento" {
-  description = "ID del Launch Template."
-  value       = module.compute.id_plantilla_lanzamiento
-}
 
 # BASE DE DATOS
 

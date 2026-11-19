@@ -1,14 +1,14 @@
 
 # AMI AMAZON LINUX 2023
 
-# Utilizamos una imagen de Amazon Linux 2023 para los nodos.
+# Utilizamos la misma imagen Amazon Linux 2023 de los nodos existentes.
 data "aws_ami" "amazon_linux" {
-  most_recent = true
+  most_recent = false
   owners      = ["amazon"]
 
   filter {
-    name   = "name"
-    values = ["al2023-ami-2023.*-x86_64"]
+    name   = "image-id"
+    values = ["ami-0129e28f078083cdf"]
   }
 
   filter {
@@ -94,6 +94,18 @@ resource "aws_security_group_rule" "flannel" {
   security_group_id = aws_security_group.k3s.id
 }
 
+# ACCESO ONLINE BOUTIQUE
+
+# Permite recibir solicitudes HTTP desde el ALB.
+resource "aws_security_group_rule" "frontend" {
+  type                     = "ingress"
+  from_port                = 30080
+  to_port                  = 30080
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.k3s.id
+  source_security_group_id = var.id_sg_alb
+}
+
 # SERVIDOR K3S
 
 # Nodo principal encargado del control del cluster.
@@ -124,6 +136,10 @@ resource "aws_instance" "server" {
 
     curl -sfL https://get.k3s.io | K3S_TOKEN="$TOKEN" INSTALL_K3S_EXEC='server --write-kubeconfig-mode 600 --disable traefik --disable servicelb' sh -
   USERDATA
+
+  lifecycle {
+    ignore_changes = [user_data]
+  }
 
   tags = {
     Name = "${var.nombre_proyecto}-k3s-server"
@@ -179,6 +195,10 @@ resource "aws_instance" "workers" {
   depends_on = [
     aws_instance.server
   ]
+
+  lifecycle {
+    ignore_changes = [user_data]
+  }
 
   tags = {
     Name = "${var.nombre_proyecto}-k3s-worker-${count.index + 1}"

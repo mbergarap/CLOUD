@@ -1,28 +1,44 @@
+
 # CONFIGURACION GENERAL
-aws_region   = "us-east-1"
-project_name = "cloud-obligatorio"
+
+region_aws     = "us-east-1"
+nombre_proyecto = "cloud-obligatorio"
+
+# ACCESO SSH
+
+# Reemplazar por la IP publica autorizada para administrar el Bastion.
+cidr_ssh_bastion = "REEMPLAZAR_IP_PUBLICA/32"
+
+# Ruta de la clave publica SSH utilizada por el Bastion.
+ruta_clave_publica_ssh = "REEMPLAZAR_RUTA_CLAVE_PUBLICA"
+
+# AMI del Bastion, valida para la region seleccionada.
+id_ami_bastion = "REEMPLAZAR_AMI_BASTION"
 
 # BASE DE DATOS
-db_username = "cloudadmin"
-db_password = "REEMPLAZAR_CON_CONTRASENA_SEGURA"
-rds_deletion_protection = true
 
-# MODALIDAD DE DESPLIEGUE
-# AWS Academy: false en las tres variables
-# AWS estandar: true en las tres variables
-create_iam_profile          = false
-manage_master_user_password = false
-use_native_s3               = false
+usuario_bd  = "cloudadmin"
+contrasena_bd = "REEMPLAZAR_CON_CONTRASENA_SEGURA"
 
-# PERFIL IAM EXISTENTE (AWS ACADEMY)
-ec2_instance_profile_name = "LabInstanceProfile"
+administrar_contrasena_maestra_rds = false
+proteccion_eliminacion_rds         = true
 
-# S3 - NOMBRE GLOBALMENTE UNICO
-app_bucket_name = "REEMPLAZAR_BUCKET_APP"
+# ALMACENAMIENTO S3
 
-# BASTION Y SSH
-bastion_ami_id      = "ami-0ed59cbb87dfa8dba"
-ssh_public_key_path = "REEMPLAZAR_RUTA_CLAVE_PUBLICA"
+# Debe ser un nombre globalmente unico.
+nombre_bucket_aplicacion = "REEMPLAZAR_BUCKET_APLICACION"
+
+# AWS Academy: false.
+# Cuentas con permisos completos para administrar S3: true.
+usar_s3_nativo = false
 
 # MONITOREO
-alert_email = "REEMPLAZAR_CORREO"
+
+correo_alertas = "REEMPLAZAR_CORREO"
+
+# KUBERNETES K3S
+
+habilitar_k3s = true
+
+# Perfil IAM existente utilizado por las instancias K3s en AWS Academy.
+nombre_perfil_iam_k3s = "LabInstanceProfile"

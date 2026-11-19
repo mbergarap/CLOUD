@@ -1,7 +1,7 @@
 
 # BALANCEADOR DE CARGA
 
-# Recibe las conexiones HTTP y distribuye el trafico entre las instancias APP.
+# Recibe las conexiones HTTP y distribuye el trafico entre los nodos K3s.
 resource "aws_lb" "main" {
   name               = "${var.nombre_proyecto}-alb"
   internal           = false
@@ -21,19 +21,20 @@ resource "aws_lb" "main" {
   }
 }
 
-# TARGET GROUP
+# TARGET GROUP ONLINE BOUTIQUE
 
-# Agrupa las instancias de aplicacion que reciben el trafico del ALB.
-resource "aws_lb_target_group" "app" {
-  name     = "${var.nombre_proyecto}-tg"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = var.id_vpc
+# Agrupa los nodos K3s que reciben el trafico de Online Boutique.
+resource "aws_lb_target_group" "k3s" {
+  name        = "${var.nombre_proyecto}-k3s-tg"
+  port        = 30080
+  protocol    = "HTTP"
+  target_type = "instance"
+  vpc_id      = var.id_vpc
 
-  # Comprueba que la aplicacion responda correctamente.
+  # Comprueba que el frontend de Online Boutique responda correctamente.
   health_check {
     enabled             = true
-    path                = "/health"
+    path                = "/"
     protocol            = "HTTP"
     port                = "traffic-port"
     interval            = 30
@@ -44,13 +45,13 @@ resource "aws_lb_target_group" "app" {
   }
 
   tags = {
-    Name = "${var.nombre_proyecto}-tg"
+    Name = "${var.nombre_proyecto}-k3s-tg"
   }
 }
 
 # LISTENER HTTP
 
-# Escucha en el puerto 80 y envia las solicitudes al Target Group.
+# Escucha en el puerto 80 y envia las solicitudes a Online Boutique.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
 
@@ -59,6 +60,6 @@ resource "aws_lb_listener" "http" {
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.app.arn
+    target_group_arn = aws_lb_target_group.k3s.arn
   }
 }

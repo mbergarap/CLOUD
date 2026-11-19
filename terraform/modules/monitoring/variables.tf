@@ -1,4 +1,3 @@
-
 # CONFIGURACION GENERAL
 
 # Nombre utilizado para identificar los recursos de monitoreo.
@@ -15,12 +14,13 @@ variable "correo_alertas" {
   type        = string
 }
 
-# AUTO SCALING
+# KUBERNETES K3S
 
-# Nombre del grupo de instancias que vamos a monitorear.
-variable "nombre_asg" {
-  description = "Nombre del Auto Scaling Group."
-  type        = string
+# Identificadores de las instancias EC2 del cluster K3s.
+variable "ids_instancias_k3s" {
+  description = "IDs de las instancias EC2 utilizadas por K3s."
+  type        = list(string)
+  default     = []
 }
 
 # BASE DE DATOS

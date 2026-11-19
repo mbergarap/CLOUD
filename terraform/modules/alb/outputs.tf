@@ -13,16 +13,17 @@ output "nombre_dns_alb" {
   value       = aws_lb.main.dns_name
 }
 
-# TARGET GROUP
 
-# ARN del grupo de instancias que recibe el trafico.
-output "arn_grupo_destino" {
-  description = "ARN del Target Group de la aplicacion."
-  value       = aws_lb_target_group.app.arn
+# TARGET GROUP ONLINE BOUTIQUE
+
+# ARN del Target Group utilizado por los nodos K3s.
+output "arn_grupo_destino_k3s" {
+  description = "ARN del Target Group de Online Boutique."
+  value       = aws_lb_target_group.k3s.arn
 }
 
-# Nombre del Target Group creado en AWS.
-output "nombre_grupo_destino" {
-  description = "Nombre del Target Group de la aplicacion."
-  value       = aws_lb_target_group.app.name
+# Nombre del Target Group de Online Boutique.
+output "nombre_grupo_destino_k3s" {
+  description = "Nombre del Target Group de Online Boutique."
+  value       = aws_lb_target_group.k3s.name
 }

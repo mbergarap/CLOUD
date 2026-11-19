@@ -71,8 +71,7 @@ module "s3" {
 
   nombre_proyecto       = var.nombre_proyecto
   nombre_bucket         = var.nombre_bucket_aplicacion
-  directorio_aplicacion = "${path.root}/../app"
-  ruta_zip_aplicacion   = "${path.root}/app.zip"
+
 
   # En AWS Academy usamos el metodo compatible con el laboratorio.
   usar_s3_nativo = var.usar_s3_nativo
@@ -80,17 +79,6 @@ module "s3" {
   region_aws = var.region_aws
 }
 
-# IAM
-
-module "iam" {
-  source = "./modules/iam"
-  count  = var.crear_perfil_iam ? 1 : 0
-
-  nombre_proyecto          = var.nombre_proyecto
-  nombre_bucket_aplicacion = var.nombre_bucket_aplicacion
-
-  arn_secreto_bd = module.database.arn_secreto_bd
-}
 
 # BASE DE DATOS
 
@@ -125,52 +113,14 @@ module "monitoring" {
   correo_alertas  = var.correo_alertas
 
   # Definimos el nombre del ASG para evitar una dependencia circular.
-  nombre_asg = "${var.nombre_proyecto}-asg"
 
   identificador_instancia_bd = module.database.identificador_instancia_bd
-}
 
-# SERVIDORES DE APLICACION
-
-# Instancias EC2 administradas por Auto Scaling y conectadas al ALB.
-module "compute" {
-  source = "./modules/compute"
-
-  nombre_proyecto = var.nombre_proyecto
-
-  id_subred_app_az1 = module.network.id_subred_app_az1
-  id_subred_app_az2 = module.network.id_subred_app_az2
-
-  id_sg_app = module.security.id_sg_app
-
-  nombre_clave_ssh = module.bastion.nombre_clave_ssh
-
-  arn_grupo_destino = module.alb.arn_grupo_destino
-
-  nombre_bucket_aplicacion = module.s3.nombre_bucket
-
-  servidor_bd                    = module.database.direccion_bd
-  nombre_bd                      = module.database.nombre_bd
-  usuario_bd                     = var.usuario_bd
-  contrasena_bd                  = var.contrasena_bd
-  administrar_contrasena_maestra = var.administrar_contrasena_maestra_rds
-  arn_secreto_bd                 = module.database.arn_secreto_bd
-
-  grupo_logs_acceso_nginx = module.monitoring.grupo_logs_acceso_nginx
-  grupo_logs_error_nginx  = module.monitoring.grupo_logs_error_nginx
-
-  grupo_logs_acceso_app = module.monitoring.grupo_logs_acceso_app
-  grupo_logs_error_app  = module.monitoring.grupo_logs_error_app
-
-  # Elegimos el perfil IAM segun el entorno donde se despliega.
-  nombre_perfil_instancia = (
-    var.crear_perfil_iam
-    ? module.iam[0].nombre_perfil_instancia
-    : var.nombre_perfil_iam_ec2
-  )
-
-  # Esperamos a que IAM y S3 esten preparados antes de lanzar las EC2.
-  depends_on = [module.iam, module.s3]
+  # Identificamos las instancias EC2 del cluster K3s.
+  ids_instancias_k3s = var.habilitar_k3s ? concat(
+    [module.k3s[0].id_instancia_servidor],
+    module.k3s[0].ids_instancias_workers
+  ) : []
 }
 
 # KUBERNETES K3S
@@ -187,8 +137,26 @@ module "k3s" {
   id_subred_app_az2 = module.network.id_subred_app_az2
 
   id_sg_bastion           = module.security.id_sg_bastion
+  id_sg_alb               = module.security.id_sg_alb
   nombre_clave_ssh        = module.bastion.nombre_clave_ssh
   nombre_perfil_instancia = var.nombre_perfil_iam_k3s
+}
+
+# DESTINOS ONLINE BOUTIQUE
+
+# Registra el servidor y los dos workers K3s en el Target Group del ALB.
+resource "aws_lb_target_group_attachment" "k3s" {
+  count = var.habilitar_k3s ? 3 : 0
+
+  target_group_arn = module.alb.arn_grupo_destino_k3s
+
+  target_id = (
+    count.index == 0
+    ? module.k3s[0].id_instancia_servidor
+    : module.k3s[0].ids_instancias_workers[count.index - 1]
+  )
+
+  port = 30080
 }
 
 # SALIDAS DEL BASTION
@@ -204,17 +172,6 @@ resource "aws_vpc_security_group_egress_rule" "bastion_https" {
   cidr_ipv4   = "0.0.0.0/0"
 }
 
-# Permite acceder por SSH desde el Bastion a las instancias APP.
-resource "aws_vpc_security_group_egress_rule" "bastion_ssh_app" {
-  security_group_id = module.security.id_sg_bastion
-
-  description                  = "SSH hacia APP"
-  ip_protocol                  = "tcp"
-  from_port                    = 22
-  to_port                      = 22
-  referenced_security_group_id = module.security.id_sg_app
-}
-
 # Permite acceder por SSH desde el Bastion a los nodos K3s.
 resource "aws_vpc_security_group_egress_rule" "bastion_ssh_k3s" {
   count = var.habilitar_k3s ? 1 : 0
@@ -226,4 +183,30 @@ resource "aws_vpc_security_group_egress_rule" "bastion_ssh_k3s" {
   from_port                    = 22
   to_port                      = 22
   referenced_security_group_id = module.k3s[0].id_sg_k3s
+}
+
+# SALIDA DEL ALB HACIA K3S
+
+# Permite que el ALB envie solicitudes HTTP a Online Boutique.
+resource "aws_vpc_security_group_egress_rule" "alb_hacia_k3s" {
+  count = var.habilitar_k3s ? 1 : 0
+
+  security_group_id = module.security.id_sg_alb
+
+  description                  = "HTTP hacia Online Boutique en K3s"
+  ip_protocol                  = "tcp"
+  from_port                    = 30080
+  to_port                      = 30080
+  referenced_security_group_id = module.k3s[0].id_sg_k3s
+}
+
+# ARCHIVO HISTORICO DE FLASK
+
+# Deja de administrar app.zip sin eliminar el archivo del bucket S3.
+removed {
+  from = module.s3.aws_s3_object.app
+
+  lifecycle {
+    destroy = false
+  }
 }

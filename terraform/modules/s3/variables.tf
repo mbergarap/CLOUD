@@ -13,20 +13,6 @@ variable "nombre_bucket" {
   type        = string
 }
 
-# ARCHIVOS DE LA APLICACION
-
-# Carpeta que contiene los archivos de la aplicacion.
-variable "directorio_aplicacion" {
-  description = "Directorio donde se encuentra la aplicacion."
-  type        = string
-}
-
-# Ruta del archivo ZIP que se sube a S3.
-variable "ruta_zip_aplicacion" {
-  description = "Ruta donde se genera el archivo app.zip."
-  type        = string
-}
-
 # CREACION DEL BUCKET
 
 # En AWS Academy usamos AWS CLI; en otras cuentas podemos utilizar Terraform.

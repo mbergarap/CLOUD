@@ -32,6 +32,12 @@ variable "id_sg_bastion" {
   type        = string
 }
 
+# Security Group del ALB utilizado para acceder a Online Boutique.
+variable "id_sg_alb" {
+  description = "ID del Security Group del ALB."
+  type        = string
+}
+
 # ACCESO SSH
 
 # Clave utilizada para conectarnos a los nodos.

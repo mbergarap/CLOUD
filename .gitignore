@@ -51,3 +51,13 @@ Thumbs.db
 # Respaldos de documentacion
 README.md.respaldo
 README.md.antes-de-corregir
+
+# Comparaciones y archivos temporales
+/paldo-online-boutique
+terraform/comparacion-frontend.json
+terraform/frontend-consulta.json
+terraform/resultado-yaml.json
+terraform/online-boutique-yaml.tar.gz
+terraform/plan-*.txt
+terraform/*.tf.respaldo-*
+terraform/modules/**/*.tf.respaldo-*

@@ -37,38 +37,6 @@ resource "aws_sns_topic_subscription" "email" {
   endpoint  = var.correo_alertas
 }
 
-# ALARMA CPU AUTO SCALING
-
-# Envia una alerta si el promedio de CPU del ASG supera el 80%.
-resource "aws_cloudwatch_metric_alarm" "asg_cpu_high" {
-  alarm_name        = "${var.nombre_proyecto}-asg-cpu-high"
-  alarm_description = "CPU promedio del Auto Scaling Group superior al 80%"
-
-  comparison_operator = "GreaterThanThreshold"
-
-  evaluation_periods = 1
-  period             = 300
-
-  metric_name = "CPUUtilization"
-  namespace   = "AWS/EC2"
-  statistic   = "Average"
-  threshold   = 80
-
-  dimensions = {
-    AutoScalingGroupName = var.nombre_asg
-  }
-
-  alarm_actions = [
-    aws_sns_topic.alerts.arn
-  ]
-
-  ok_actions = [
-    aws_sns_topic.alerts.arn
-  ]
-
-  treat_missing_data = "notBreaching"
-}
-
 # ALARMA CPU RDS
 
 # Envia una alerta cuando el uso de CPU de RDS supera el 80%.
@@ -88,6 +56,39 @@ resource "aws_cloudwatch_metric_alarm" "rds_cpu_high" {
 
   dimensions = {
     DBInstanceIdentifier = var.identificador_instancia_bd
+  }
+
+  alarm_actions = [
+    aws_sns_topic.alerts.arn
+  ]
+
+  ok_actions = [
+    aws_sns_topic.alerts.arn
+  ]
+
+  treat_missing_data = "notBreaching"
+}
+
+# ALARMAS CPU K3S
+
+# Supervisa el uso de CPU de cada instancia del cluster K3s.
+resource "aws_cloudwatch_metric_alarm" "k3s_cpu_high" {
+  count = length(var.ids_instancias_k3s)
+
+  alarm_name        = "${var.nombre_proyecto}-k3s-cpu-high-${count.index + 1}"
+  alarm_description = "CPU de la instancia K3s superior al 80%"
+
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  period              = 300
+
+  metric_name = "CPUUtilization"
+  namespace   = "AWS/EC2"
+  statistic   = "Average"
+  threshold   = 80
+
+  dimensions = {
+    InstanceId = var.ids_instancias_k3s[count.index]
   }
 
   alarm_actions = [

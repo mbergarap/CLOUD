@@ -174,31 +174,3 @@ resource "aws_s3_bucket_lifecycle_configuration" "app" {
     aws_s3_bucket_versioning.app
   ]
 }
-
-# EMPAQUETADO DE LA APLICACION
-
-# Genera app.zip con los archivos de la aplicacion.
-data "archive_file" "app" {
-  type        = "zip"
-  source_dir  = var.directorio_aplicacion
-  output_path = var.ruta_zip_aplicacion
-}
-
-# SUBIDA A S3
-
-# Sube el ZIP al bucket para que las EC2 puedan descargarlo.
-resource "aws_s3_object" "app" {
-  bucket = var.nombre_bucket
-  key    = "app.zip"
-
-  source = data.archive_file.app.output_path
-  etag   = filemd5(data.archive_file.app.output_path)
-
-  depends_on = [
-    terraform_data.app_bucket,
-    aws_s3_bucket.app,
-    aws_s3_bucket_versioning.app,
-    aws_s3_bucket_public_access_block.app,
-    aws_s3_bucket_server_side_encryption_configuration.app
-  ]
-}

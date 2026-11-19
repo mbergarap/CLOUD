@@ -15,14 +15,6 @@ output "id_sg_bastion" {
   value       = aws_security_group.bastion.id
 }
 
-# APLICACION
-
-# Identificador del Security Group de las instancias APP.
-output "id_sg_app" {
-  description = "ID del Security Group de la aplicacion."
-  value       = aws_security_group.app.id
-}
-
 # BASE DE DATOS
 
 # Identificador del Security Group de PostgreSQL RDS.

@@ -70,18 +70,6 @@ variable "usar_s3_nativo" {
   default     = false
 }
 
-# PERMISOS IAM
-
-variable "crear_perfil_iam" {
-  description = "Indica si Terraform debe crear el perfil IAM."
-  type        = bool
-  default     = false
-}
-
-variable "nombre_perfil_iam_ec2" {
-  description = "Nombre del perfil IAM utilizado por las instancias EC2."
-  type        = string
-}
 
 # MONITOREO
 
