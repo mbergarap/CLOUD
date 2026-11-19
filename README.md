@@ -1,719 +1,947 @@
-# Soluciones Cloud — Obligatorio
+# Soluciones Cloud – Obligatorio
 
-## Descripción del proyecto
+**Universidad ORT Uruguay**
+**Carrera:** Analista en Infraestructura Informática
+**Asignatura:** Soluciones Cloud
 
-Proyecto desarrollado para la asignatura **Soluciones Cloud**, correspondiente a la carrera Analista en Infraestructura Informática de ORT Uruguay.
+**Tecnologías:** AWS · Terraform · Kubernetes (K3s) · Docker · Git
 
-El objetivo es implementar una infraestructura en Amazon Web Services (AWS) que permita desplegar una aplicación web utilizando servicios de nube, automatización, seguridad, monitoreo, escalabilidad y distribución entre zonas de disponibilidad.
+## 1. Descripción del proyecto
 
-La infraestructura se administra mediante **Terraform**, utilizando una arquitectura modular.
+El objetivo del proyecto es diseñar, implementar y administrar una infraestructura en Amazon Web Services (AWS) que permita ejecutar una aplicación web basada en microservicios, utilizando servicios de nube e infraestructura como código.
 
-La aplicación implementada es **Online Boutique**, una aplicación de microservicios desplegada sobre un clúster **K3s (Kubernetes)** en instancias Amazon EC2.
+La solución implementada utiliza **Online Boutique**, una aplicación de comercio electrónico desplegada sobre un clúster Kubernetes mediante K3s.
 
-La solución incorpora:
+La infraestructura se encuentra distribuida entre dos zonas de disponibilidad de AWS e incorpora segmentación de red, balanceo de carga, escalabilidad automática, recuperación de pods, monitoreo y controles de seguridad.
 
-- Infraestructura de red privada en AWS.
-- Dos zonas de disponibilidad.
-- Application Load Balancer (ALB).
-- Clúster K3s con tres nodos EC2.
-- Aplicación Online Boutique basada en microservicios.
-- Horizontal Pod Autoscaler (HPA).
-- Amazon RDS PostgreSQL Multi-AZ.
-- Amazon S3.
-- Bastion Host.
-- Security Groups.
-- CloudWatch y Amazon SNS.
-- Estado remoto de Terraform almacenado en S3.
+Los componentes de infraestructura se definen principalmente mediante **Terraform**, mientras que los recursos de Kubernetes se gestionan mediante manifiestos YAML.
 
-## Arquitectura
+### Objetivos
 
-La infraestructura se encuentra desplegada en:
+- Automatizar el aprovisionamiento de infraestructura AWS mediante Terraform.
+- Diseñar una red virtual segmentada en subredes públicas y privadas.
+- Distribuir componentes entre dos zonas de disponibilidad.
+- Implementar un clúster Kubernetes con K3s.
+- Desplegar Online Boutique mediante microservicios.
+- Publicar la aplicación mediante un Application Load Balancer.
+- Implementar escalabilidad horizontal automática.
+- Comprobar la recuperación automática de pods.
+- Incorporar monitoreo y alertas.
+- Documentar la arquitectura, su funcionamiento y los procedimientos de administración.
 
-- **Región:** `us-east-1`
-- **Zona de disponibilidad 1:** `us-east-1a`
-- **Zona de disponibilidad 2:** `us-east-1b`
-- **VPC:** `192.168.0.0/16`
+## 2. Arquitectura de la solución
 
-### Networking
+La infraestructura se despliega en la región `us-east-1`.
 
-La VPC se divide en seis subredes distribuidas entre dos zonas de disponibilidad.
+| Componente | Configuración |
+|---|---|
+| Región AWS | us-east-1 |
+| Zona de disponibilidad 1 | us-east-1a |
+| Zona de disponibilidad 2 | us-east-1b |
+| VPC | 192.168.0.0/16 |
+| Infraestructura como código | Terraform |
+| Plataforma de contenedores | K3s |
+| Aplicación | Online Boutique |
+| Entrada pública | Application Load Balancer |
+| Escalabilidad | Kubernetes HPA |
+| Base de datos AWS | Amazon RDS PostgreSQL |
+| Almacenamiento AWS | Amazon S3 |
+| Monitoreo | Amazon CloudWatch |
+| Alertas | Amazon SNS |
 
-| Tipo de subred | Zona de disponibilidad | CIDR |
-|---|---|---|
-| Pública AZ1 | us-east-1a | 192.168.1.0/24 |
-| Pública AZ2 | us-east-1b | 192.168.2.0/24 |
-| Aplicación AZ1 | us-east-1a | 192.168.10.0/24 |
-| Aplicación AZ2 | us-east-1b | 192.168.20.0/24 |
-| Base de datos AZ1 | us-east-1a | 192.168.30.0/24 |
-| Base de datos AZ2 | us-east-1b | 192.168.40.0/24 |
+### 2.1. Diagrama de arquitectura
 
-La arquitectura utiliza:
+```mermaid
+flowchart TB
+    U["Usuarios de Internet"]
 
-- **Internet Gateway:** permite la comunicación entre Internet y los recursos públicos de la VPC.
-- **NAT Gateway AZ1:** permite la salida a Internet de las instancias privadas de la primera zona.
-- **NAT Gateway AZ2:** proporciona salida a Internet para las instancias privadas de la segunda zona.
-- **Tablas de rutas:** controlan el enrutamiento de las subredes públicas y privadas.
+    subgraph AWS["AWS - Región us-east-1"]
+        IGW["Internet Gateway"]
 
-Las instancias K3s y RDS se encuentran en subredes privadas y no requieren direcciones IP públicas para recibir el tráfico de la aplicación.
+        subgraph VPC["VPC - 192.168.0.0/16"]
+            ALB["Application Load Balancer<br/>HTTP :80"]
 
-### Application Load Balancer
+            subgraph AZ1["Zona us-east-1a"]
+                P1["Subred pública<br/>192.168.1.0/24<br/>NAT Gateway AZ1<br/>Bastion Host"]
+                A1["Subred de aplicación<br/>192.168.10.0/24<br/>K3s Server<br/>K3s Worker 1"]
+                D1["Subred de base de datos<br/>192.168.30.0/24"]
+            end
 
-Se utiliza un Application Load Balancer público para distribuir las solicitudes HTTP entre los nodos K3s.
+            subgraph AZ2["Zona us-east-1b"]
+                P2["Subred pública<br/>192.168.2.0/24<br/>NAT Gateway AZ2"]
+                A2["Subred de aplicación<br/>192.168.20.0/24<br/>K3s Worker 2"]
+                D2["Subred de base de datos<br/>192.168.40.0/24"]
+            end
 
-Configuración:
+            FRONT["Frontend Online Boutique<br/>NodePort 30080<br/>HPA: 2 a 4 réplicas"]
+            MICROS["Microservicios Kubernetes<br/>Servicios internos ClusterIP"]
+            RDS["Amazon RDS PostgreSQL<br/>Multi-AZ"]
+        end
 
-- **Nombre:** `cloud-obligatorio-alb`
-- **Listener:** HTTP, puerto 80
-- **Target Group:** `cloud-obligatorio-k3s-tg`
-- **Protocolo hacia los nodos:** HTTP
-- **Puerto de destino:** 30080
-- **Health Check:** `/`
-- **Código esperado:** HTTP 200
+        S3["Amazon S3<br/>Estado remoto de Terraform<br/>Bucket de aplicación"]
+        CW["CloudWatch<br/>Alarmas de CPU"]
+        SNS["Amazon SNS<br/>Notificaciones por correo"]
+    end
 
-El Target Group registra los tres nodos del clúster K3s.
+    U --> IGW
+    IGW --> ALB
 
-La dirección pública utilizada para acceder a Online Boutique es:
+    ALB -->|"HTTP 30080"| A1
+    ALB -->|"HTTP 30080"| A2
 
-`http://cloud-obligatorio-alb-643673029.us-east-1.elb.amazonaws.com/`
+    A1 --- FRONT
+    A2 --- FRONT
+    FRONT --> MICROS
 
-Esta dirección corresponde al entorno desplegado y puede cambiar si se recrea el ALB.
+    A1 -.->|"Salida por NAT AZ1"| P1
+    A2 -.->|"Salida por NAT AZ2"| P2
+    P1 -.-> IGW
+    P2 -.-> IGW
 
-## Clúster K3s
+    D1 --- RDS
+    D2 --- RDS
 
-La aplicación se ejecuta sobre un clúster Kubernetes implementado mediante K3s.
+    CW --> SNS
+```
 
-El clúster está formado por tres instancias EC2:
+El diagrama representa la organización lógica de la infraestructura y las comunicaciones principales.
 
-| Nodo | Dirección IP privada | Zona | Función |
+Los usuarios acceden a Online Boutique mediante el ALB público. El balanceador envía el tráfico HTTP al puerto `30080` de los nodos K3s y Kubernetes lo dirige hacia los pods disponibles del frontend.
+
+Los microservicios se comunican internamente mediante servicios Kubernetes.
+
+Amazon RDS se encuentra desplegado como un componente independiente de la infraestructura y no participa en el procesamiento de solicitudes de Online Boutique.
+
+## 3. Infraestructura de red
+
+### 3.1. VPC y subredes
+
+Se implementó una VPC con el bloque:
+
+`192.168.0.0/16`
+
+La red se organiza en seis subredes distribuidas entre dos zonas de disponibilidad.
+
+| Subred | Zona | CIDR | Propósito |
 |---|---|---|---|
-| K3s Server | 192.168.10.152 | us-east-1a | Control Plane |
+| Pública AZ1 | us-east-1a | 192.168.1.0/24 | Recursos públicos |
+| Pública AZ2 | us-east-1b | 192.168.2.0/24 | Recursos públicos |
+| Aplicación AZ1 | us-east-1a | 192.168.10.0/24 | Nodos K3s |
+| Aplicación AZ2 | us-east-1b | 192.168.20.0/24 | Nodos K3s |
+| Base de datos AZ1 | us-east-1a | 192.168.30.0/24 | RDS |
+| Base de datos AZ2 | us-east-1b | 192.168.40.0/24 | RDS |
+
+Esta segmentación permite separar los componentes según su función y sus necesidades de conectividad.
+
+### 3.2. Internet Gateway
+
+La VPC dispone de un Internet Gateway para habilitar la comunicación de sus recursos públicos con Internet.
+
+Las tablas de rutas de las subredes públicas utilizan el Internet Gateway como destino para el tráfico hacia redes externas.
+
+### 3.3. NAT Gateways
+
+Se utilizan dos NAT Gateways:
+
+- Un NAT Gateway en la zona `us-east-1a`.
+- Un NAT Gateway en la zona `us-east-1b`.
+
+Estos componentes permiten que los recursos de las subredes privadas de aplicación inicien conexiones hacia Internet sin necesitar direcciones IP públicas.
+
+Cada zona dispone de su propio NAT Gateway, reduciendo la dependencia de un único punto de salida.
+
+### 3.4. Tablas de rutas
+
+Las tablas de rutas determinan los destinos del tráfico dentro de la VPC y hacia redes externas.
+
+Las subredes públicas disponen de una ruta predeterminada hacia el Internet Gateway.
+
+Las subredes privadas de aplicación utilizan las rutas de salida configuradas hacia los NAT Gateways correspondientes.
+
+El tráfico interno entre subredes de la VPC se enruta mediante la conectividad local de AWS, sujeto a las reglas de seguridad aplicables.
+
+## 4. Application Load Balancer
+
+La aplicación se publica mediante un **Application Load Balancer (ALB)** de AWS.
+
+| Parámetro | Valor |
+|---|---|
+| Nombre | cloud-obligatorio-alb |
+| Esquema | Internet-facing |
+| Listener | HTTP |
+| Puerto público | 80 |
+| Target Group | cloud-obligatorio-k3s-tg |
+| Protocolo hacia los nodos | HTTP |
+| Puerto de destino | 30080 |
+| Health Check | / |
+| Respuesta esperada | HTTP 200 |
+
+El ALB se encuentra asociado con las subredes públicas de ambas zonas de disponibilidad.
+
+Su Target Group registra los tres nodos K3s, permitiendo dirigir solicitudes a la aplicación a través del servicio NodePort.
+
+### 4.1. Acceso público
+
+La aplicación se encuentra disponible en:
+
+http://cloud-obligatorio-alb-643673029.us-east-1.elb.amazonaws.com/
+
+La dirección corresponde al despliegue de AWS utilizado durante las pruebas y puede cambiar si se recrea el balanceador.
+
+### 4.2. Flujo de solicitudes
+
+1. El usuario accede a la dirección pública del ALB.
+2. El listener HTTP recibe la solicitud en el puerto 80.
+3. El Target Group selecciona un destino disponible.
+4. La solicitud llega a un nodo K3s mediante el puerto 30080.
+5. El servicio Kubernetes dirige el tráfico a un pod disponible del frontend.
+6. El frontend se comunica con los microservicios internos necesarios para atender la solicitud.
+
+## 5. Clúster Kubernetes con K3s
+
+Se implementó un clúster Kubernetes utilizando **K3s** sobre instancias Amazon EC2.
+
+La arquitectura utiliza un servidor de control y dos nodos worker.
+
+### 5.1. Nodos
+
+| Nodo | IP privada | Zona de disponibilidad | Función |
+|---|---|---|---|
+| K3s Server | 192.168.10.152 | us-east-1a | Control Plane y ejecución de pods |
 | K3s Worker 1 | 192.168.10.63 | us-east-1a | Worker |
 | K3s Worker 2 | 192.168.20.83 | us-east-1b | Worker |
 
-El servidor K3s administra el clúster y participa en la ejecución de cargas de trabajo.
+Los tres nodos utilizan Amazon Linux 2023.
 
-Los dos workers permiten distribuir los contenedores entre instancias y zonas de disponibilidad.
+El servidor K3s se encarga de las funciones de control del clúster y también puede ejecutar pods de la aplicación.
 
-El clúster utiliza el perfil IAM `LabInstanceProfile` proporcionado por AWS Academy, que permite utilizar los permisos disponibles en el laboratorio.
+Los workers proporcionan capacidad adicional de cómputo para distribuir los microservicios.
 
-### Distribución entre zonas de disponibilidad
+### 5.2. Componentes Kubernetes
 
-El frontend de Online Boutique utiliza `topologySpreadConstraints` con la etiqueta:
+La implementación utiliza los componentes propios de K3s y Kubernetes:
+
+- API Server.
+- Scheduler.
+- Controller Manager.
+- Kubelet.
+- Containerd.
+- CoreDNS.
+- Metrics Server.
+- Flannel.
+
+Flannel proporciona conectividad entre los pods distribuidos en los distintos nodos.
+
+Metrics Server permite obtener métricas de CPU y memoria utilizadas, entre otras funciones, por el Horizontal Pod Autoscaler.
+
+Traefik y ServiceLB se encuentran deshabilitados en el servidor K3s. El acceso público de la aplicación se implementa mediante el ALB de AWS.
+
+### 5.3. Administración del clúster
+
+Las instancias utilizan el perfil IAM `LabInstanceProfile`, proporcionado por el entorno AWS Academy.
+
+Se utiliza AWS Systems Manager para ejecutar comandos administrativos sobre el servidor K3s, según los permisos disponibles en el entorno.
+
+Algunos comandos de administración habituales son:
+
+```bash
+kubectl get nodes -o wide
+kubectl get pods -o wide
+kubectl get deployments
+kubectl get services
+kubectl get hpa
+kubectl top nodes
+kubectl top pods
+```
+
+### 5.4. Distribución entre zonas
+
+El frontend utiliza `topologySpreadConstraints` con la etiqueta:
 
 `topology.kubernetes.io/zone`
 
-Esta configuración permite distribuir las réplicas del frontend entre diferentes zonas de disponibilidad.
+Esta configuración permite distribuir sus réplicas entre nodos ubicados en distintas zonas de disponibilidad.
 
-En las verificaciones realizadas se confirmó:
+Durante las verificaciones se comprobó la existencia de réplicas del frontend tanto en `us-east-1a` como en `us-east-1b`.
 
-- Una réplica del frontend en `us-east-1a`.
-- Una réplica del frontend en `us-east-1b`.
-- Ambas réplicas en estado `Running` y disponibles.
+### 5.5. Limitación del Control Plane
 
-Esta distribución mejora la continuidad del servicio ante fallas de un nodo o zona, aunque no garantiza por sí sola la recuperación completa de todos los componentes.
+El clúster dispone de un único servidor K3s en `us-east-1a`.
 
-### Limitación del Control Plane
+Por lo tanto, el Control Plane constituye un punto único de fallo.
 
-La implementación utiliza un único servidor K3s en `us-east-1a`.
+Una interrupción de ese servidor puede afectar la administración del clúster, la programación de nuevos pods y las operaciones de recuperación que requieren el plano de control.
 
-Por este motivo, **el Control Plane no tiene alta disponibilidad completa**.
+La distribución entre dos zonas mejora la disponibilidad de las cargas de trabajo, pero no equivale a una arquitectura Kubernetes de alta disponibilidad completa.
 
-Ante una falla de este servidor, pueden verse afectadas las operaciones de administración y programación de nuevos pods.
+## 6. Aplicación Online Boutique
 
-Esta limitación se considera una oportunidad de mejora de la arquitectura.
+**Online Boutique** es una aplicación de comercio electrónico basada en microservicios.
 
-## Aplicación Online Boutique
+Se ejecuta mediante Deployments y Services de Kubernetes.
 
-Online Boutique es una aplicación de comercio electrónico basada en microservicios.
-
-Los componentes desplegados son:
+### 6.1. Microservicios desplegados
 
 | Microservicio | Función |
 |---|---|
-| frontend | Interfaz web utilizada por los usuarios |
-| adservice | Gestión de anuncios y recomendaciones publicitarias |
-| cartservice | Administración del carrito de compras |
-| checkoutservice | Coordinación del proceso de compra |
+| frontend | Interfaz web de la tienda |
+| adservice | Publicidad y promociones |
+| cartservice | Administración del carrito |
+| checkoutservice | Proceso de compra |
 | currencyservice | Conversión de monedas |
-| emailservice | Simulación del envío de correos |
-| paymentservice | Simulación del procesamiento de pagos |
+| emailservice | Notificaciones por correo |
+| paymentservice | Simulación de pagos |
 | productcatalogservice | Catálogo de productos |
-| recommendationservice | Recomendaciones de productos |
-| redis-cart | Almacenamiento del carrito |
-| shippingservice | Cálculo y procesamiento simulado de envíos |
+| recommendationservice | Recomendaciones |
+| shippingservice | Gestión y cálculo de envíos |
+| redis-cart | Almacenamiento de datos del carrito |
 
-Cada componente cuenta con su Deployment y Service correspondiente.
+Los once componentes conforman la aplicación desplegada en el clúster.
 
-Los servicios internos utilizan `ClusterIP`, mientras que el frontend se expone mediante un Service `NodePort`.
+### 6.2. Imagen del frontend
 
-### Frontend personalizado
-
-El frontend utiliza la imagen:
+El Deployment del frontend utiliza la imagen:
 
 `matiasbp/online-boutique-interfaz:1.0`
 
-Configuración de acceso:
+Esta imagen contiene la interfaz personalizada utilizada en el proyecto.
 
-- **Tipo de Service:** NodePort
-- **Puerto interno del Service:** 80
-- **NodePort:** 30080
-- **Acceso externo:** Application Load Balancer
+### 6.3. Comunicación entre servicios
 
-Los usuarios acceden al ALB, que distribuye las solicitudes a los nodos del clúster a través del puerto 30080.
+Los microservicios internos utilizan servicios Kubernetes de tipo `ClusterIP`.
 
-### Flujo de solicitudes
+La comunicación interna se realiza mediante los nombres de servicio y los puertos definidos en sus manifiestos.
+
+El frontend se encuentra expuesto mediante un servicio `NodePort`.
+
+| Parámetro | Valor |
+|---|---|
+| Puerto del contenedor frontend | 8080 |
+| NodePort | 30080 |
+| Acceso externo | AWS Application Load Balancer |
+
+### 6.4. Manifiestos Kubernetes
+
+Los manifiestos están organizados en la carpeta `kubernetes/`.
 
 ```text
-                    INTERNET
-                        |
-                        v
-             APPLICATION LOAD BALANCER
-                   HTTP :80
-                        |
-                        v
-                TARGET GROUP K3S
-                   HTTP :30080
-                        |
-           +------------+------------+
-           |            |            |
-           v            v            v
-      K3s Server    K3s Worker   K3s Worker
-         AZ1           AZ1          AZ2
-           |            |            |
-           +------------+------------+
-                        |
-                        v
-                SERVICE FRONTEND
-                   NODEPORT
-                        |
-                        v
-                FRONTEND PODS
-                  AZ1 y AZ2
-                        |
-                        v
-              MICROSERVICIOS
-                ONLINE BOUTIQUE
+kubernetes/
+├── adservice.yaml
+├── cartservice.yaml
+├── checkoutservice.yaml
+├── currencyservice.yaml
+├── emailservice.yaml
+├── frontend-hpa.yaml
+├── frontend.yaml
+├── paymentservice.yaml
+├── productcatalogservice.yaml
+├── recommendationservice.yaml
+├── redis.yaml
+└── shippingservice.yaml
 ```
 
-El ALB utiliza los tres nodos como destinos. Kubernetes gestiona el acceso a los pods del frontend y la comunicación entre los microservicios.
+Estos archivos definen los recursos necesarios para ejecutar la aplicación dentro de Kubernetes.
 
-## Escalabilidad automática
+## 7. Escalabilidad horizontal automática
 
-Se implementó un Horizontal Pod Autoscaler (HPA) para el Deployment `frontend`.
+La solución utiliza un **Horizontal Pod Autoscaler (HPA)** para ajustar automáticamente la cantidad de réplicas del frontend de acuerdo con la utilización de CPU.
 
-Configuración:
+### 7.1. Configuración del HPA
 
 | Parámetro | Valor |
 |---|---|
 | Nombre | frontend-hpa |
-| API | autoscaling/v2 |
 | Deployment | frontend |
+| Métrica | CPU |
+| Objetivo | 60 % |
 | Réplicas mínimas | 2 |
 | Réplicas máximas | 4 |
-| Objetivo de utilización de CPU | 60 % |
+| CPU solicitada por pod | 100m |
+| Límite de CPU por pod | 200m |
+| Memoria solicitada | 64Mi |
+| Límite de memoria | 128Mi |
 
-El HPA consulta las métricas de CPU proporcionadas por Kubernetes y ajusta el número de réplicas según la demanda y la capacidad disponible.
+La utilización porcentual del HPA se calcula respecto de la CPU solicitada por los contenedores.
 
-El Deployment utiliza solicitudes de recursos de CPU para permitir el cálculo de utilización.
+Cuando el consumo aumenta por encima del objetivo, Kubernetes puede incrementar la cantidad de réplicas, respetando el máximo configurado.
 
-Se verificó que el HPA estaba activo, recibía métricas y mantenía dos réplicas cuando la utilización de CPU era baja.
+Cuando la utilización disminuye, el HPA puede reducirlas, respetando el mínimo y sus mecanismos de estabilización.
 
-**Limitación:** el HPA escala pods, pero no aumenta automáticamente la cantidad de instancias EC2 del clúster. La capacidad máxima depende de los tres nodos existentes.
+### 7.2. Prueba de escalabilidad
 
-## Base de datos Amazon RDS
+**Fecha:** 19 de noviembre de 2026.
 
-La infraestructura incluye una base de datos administrada mediante Amazon RDS.
+Se realizó una prueba de carga sobre el ALB público de Online Boutique.
 
-Características:
+Condiciones de la prueba:
 
-- **Motor:** PostgreSQL 16.
-- **Tipo de instancia:** `db.t3.micro`.
-- **Almacenamiento:** 20 GB.
-- **Tipo de almacenamiento:** gp3.
-- **Cifrado:** habilitado.
-- **Multi-AZ:** habilitado.
-- **Backups automáticos:** retención de 7 días.
-- **Acceso público:** deshabilitado.
-- **Subredes:** privadas de base de datos en ambas zonas.
+- Duración: 120 segundos.
+- Concurrencia: 10 trabajadores HTTP.
+- Acceso mediante el ALB.
+- Sin modificar manualmente la cantidad de réplicas.
 
-RDS utiliza un Security Group específico que restringe sus conexiones de red.
+Resultados:
 
-Actualmente, RDS se mantiene como **componente independiente de infraestructura** y no es utilizado por los microservicios de Online Boutique.
+| Indicador | Resultado |
+|---|---|
+| Solicitudes HTTP exitosas | 4.898 |
+| Solicitudes fallidas | 0 |
+| Tasa de éxito registrada | 100 % |
+| Réplicas iniciales | 2 |
+| Réplicas máximas alcanzadas | 4 |
+| Réplicas al finalizar la estabilización | 2 |
 
-La aplicación utiliza sus propios servicios internos, incluido Redis para el carrito.
+El HPA registró eventos `SuccessfulRescale`.
 
-La configuración Multi-AZ proporciona redundancia para el servicio de base de datos administrado.
+La secuencia observada fue:
 
-## Almacenamiento Amazon S3
+**2 → 3 → 4 → 3 → 2 réplicas**
 
-Se utilizan dos propósitos diferenciados de almacenamiento S3.
+Los eventos confirmaron que el aumento se produjo por la utilización de CPU por encima del objetivo configurado.
 
-### Estado remoto de Terraform
+La reducción posterior ocurrió cuando las métricas volvieron a encontrarse por debajo del objetivo.
+
+Durante el escalado se comprobaron cuatro pods del frontend disponibles y distribuidos entre ambas zonas.
+
+**Resultado:** escalabilidad horizontal y reducción automática verificadas satisfactoriamente.
+
+## 8. Recuperación automática ante fallos
+
+Los Deployments de Kubernetes mantienen un número deseado de réplicas.
+
+Si se pierde un pod administrado por un Deployment, Kubernetes intenta crear otro para recuperar el estado deseado.
+
+### 8.1. Prueba de recuperación
+
+**Fecha:** 19 de noviembre de 2026.
+
+Se realizó una prueba controlada eliminando un pod del frontend mientras existían dos réplicas disponibles.
+
+Estado inicial:
+
+- Dos pods del frontend.
+- Ambos `Running` y `Ready`.
+- Uno en cada zona de disponibilidad.
+
+Se eliminó el siguiente pod:
+
+`frontend-5cf8cb86d5-68d4l`
+
+Comando utilizado:
+
+```bash
+kubectl delete pod frontend-5cf8cb86d5-68d4l -n default
+```
+
+Kubernetes creó automáticamente el pod de reemplazo:
+
+`frontend-5cf8cb86d5-n9qt5`
+
+El nuevo pod quedó en estado:
+
+`1/1 Running`
+
+El frontend recuperó sus dos réplicas:
+
+| Zona | Réplicas recuperadas |
+|---|---|
+| us-east-1a | 1 |
+| us-east-1b | 1 |
+
+Después de la recuperación se verificó nuevamente el acceso a la aplicación mediante el ALB.
+
+**Resultado:** recuperación automática de un pod y restauración del estado deseado del Deployment verificadas.
+
+Esta prueba demuestra recuperación ante un fallo de pod. No representa una simulación de caída completa de una instancia EC2 ni de una zona de disponibilidad.
+
+## 9. Amazon RDS
+
+La infraestructura incluye una base de datos administrada mediante **Amazon RDS para PostgreSQL**.
+
+### 9.1. Configuración
+
+| Parámetro | Valor |
+|---|---|
+| Motor | PostgreSQL |
+| Versión | 16 |
+| Clase | db.t3.micro |
+| Multi-AZ | Habilitado |
+| Cifrado | Habilitado |
+| Retención de backups | 7 días |
+| Ubicación | Subredes privadas de base de datos |
+
+### 9.2. Disponibilidad
+
+RDS utiliza una implementación Multi-AZ administrada por AWS.
+
+Esta configuración está orientada a mejorar la disponibilidad ante determinados fallos de infraestructura o del servicio de base de datos.
+
+### 9.3. Seguridad
+
+La base de datos se encuentra en subredes privadas.
+
+Su Security Group no permite conexiones entrantes en la configuración actual.
+
+### 9.4. Relación con la aplicación
+
+RDS se mantiene como un componente independiente de infraestructura.
+
+Los microservicios de Online Boutique no utilizan esta instancia PostgreSQL.
+
+La implementación de RDS permite trabajar con un servicio administrado de base de datos, sus mecanismos de seguridad, backups y disponibilidad.
+
+## 10. Amazon S3
+
+La infraestructura utiliza Amazon S3 para almacenamiento de objetos y del estado de Terraform.
+
+### 10.1. Backend remoto de Terraform
 
 Bucket:
 
 `cloud-obligatorio-tfstate-2026`
 
-Permite almacenar el estado de Terraform de forma remota, manteniendo un registro de los recursos administrados.
+Su función es almacenar el estado remoto de Terraform.
 
-El bucket fue configurado con versionado habilitado.
+El bucket tiene versionado habilitado.
 
-Este bucket debe existir antes de inicializar Terraform con el backend remoto.
+El estado remoto centraliza el registro de los recursos administrados y facilita la continuidad de la administración de infraestructura entre distintas sesiones de trabajo.
 
-### Bucket de aplicación
+**Este bucket no debe eliminarse mientras siga siendo utilizado como backend.**
+
+### 10.2. Bucket de aplicación
 
 Bucket:
 
 `cloud-obligatorio-app-bergara-ocampo-2026`
 
-Configuración:
+Se utiliza como recurso de almacenamiento S3 del proyecto.
 
-- Bloqueo de acceso público.
-- Cifrado SSE-S3.
-- Versionado de objetos.
-- Política de ciclo de vida para versiones anteriores.
+Cuenta con:
 
-El bucket conserva el archivo histórico `app.zip`, correspondiente a la implementación inicial de Flask.
+- Acceso privado.
+- Cifrado.
+- Versionado.
 
-Este archivo ya no forma parte del despliegue de Online Boutique y dejó de estar administrado como objeto por Terraform.
+El despliegue de Online Boutique utiliza imágenes de contenedores y manifiestos Kubernetes.
 
-No debe confundirse este bucket con el utilizado para almacenar el estado remoto.
+## 11. Seguridad
 
-## Seguridad
+La infraestructura aplica controles de acceso mediante segmentación de red, Security Groups y permisos IAM disponibles en el entorno.
 
-La infraestructura utiliza Security Groups para controlar las comunicaciones.
+### 11.1. Security Groups
 
-### Application Load Balancer
+Los Security Groups controlan las comunicaciones autorizadas entre los componentes.
 
-- Permite recibir HTTP por el puerto 80 desde Internet.
-- Permite la comunicación hacia los nodos K3s por el puerto 30080.
+Se utilizan reglas específicas para:
 
-### K3s
+- Acceso HTTP al ALB.
+- Comunicación del ALB con los nodos K3s.
+- Comunicaciones necesarias para el clúster.
+- Acceso administrativo al Bastion Host.
+- Aislamiento de RDS.
 
-Los nodos utilizan reglas de seguridad para:
+Los nodos K3s y la base de datos se encuentran en subredes privadas.
 
-- Recibir tráfico desde el ALB al frontend.
-- Permitir las comunicaciones necesarias entre componentes del clúster.
-- Permitir la administración autorizada.
+### 11.2. Bastion Host
 
-### Bastion Host
+El Bastion Host proporciona un punto de acceso administrativo SSH.
 
-El Bastion Host se encuentra en una subred pública y permite realizar tareas de administración sobre recursos privados.
+El Security Group correspondiente restringe el origen autorizado para conexiones SSH.
 
-El acceso SSH se restringe a una dirección IPv4 autorizada mediante una regla `/32`.
+La dirección autorizada se configura mediante una variable de Terraform, permitiendo administrar el acceso sin habilitar SSH indiscriminadamente desde Internet.
 
-El proyecto incluye un script administrativo para actualizar esta dirección cuando cambia la IP pública del operador.
+### 11.3. IAM y Systems Manager
 
-### RDS
+Las instancias K3s utilizan el perfil:
 
-La base de datos se encuentra en subredes privadas, sin acceso público.
+`LabInstanceProfile`
 
-Su Security Group no permite actualmente conexiones entrantes desde la antigua aplicación Flask.
+Este perfil corresponde al entorno AWS Academy.
 
-### Protección de información sensible
+Mediante AWS Systems Manager se ejecutan comandos de administración en el servidor K3s conforme a los permisos disponibles.
 
-Los siguientes archivos no deben publicarse en GitHub:
+### 11.4. Protección de información sensible
 
-- `terraform.tfvars`
-- Archivos de estado de Terraform.
-- Credenciales AWS.
-- Claves privadas SSH.
-- Archivos `.pem` y `.key`.
-- Planes binarios de Terraform.
-- Archivos temporales que puedan contener datos sensibles.
+No se deben publicar contraseñas, claves privadas, tokens ni credenciales de AWS.
 
-El repositorio utiliza `.gitignore` para excluir estos archivos.
+El repositorio utiliza `.gitignore` para excluir archivos sensibles y temporales, incluidos:
 
-## Monitoreo y alertas
+- Archivos `terraform.tfvars` con valores reales.
+- Archivos de estado locales.
+- Directorios `.terraform/`.
+- Planes temporales de Terraform.
+- Archivos de credenciales y claves privadas.
 
-Se implementó monitoreo mediante Amazon CloudWatch y notificaciones mediante Amazon SNS.
+Se recomienda verificar los cambios preparados antes de cada commit.
 
-### Alarmas de CPU
+## 12. Monitoreo y notificaciones
 
-| Componente | Métrica | Umbral |
+La infraestructura utiliza Amazon CloudWatch para supervisar métricas de recursos AWS.
+
+### 12.1. Alarmas CloudWatch
+
+Se encuentran configuradas:
+
+| Recurso | Métrica | Umbral |
 |---|---|---|
 | K3s Server | CPUUtilization | 80 % |
-| K3s Worker AZ1 | CPUUtilization | 80 % |
-| K3s Worker AZ2 | CPUUtilization | 80 % |
+| K3s Worker 1 | CPUUtilization | 80 % |
+| K3s Worker 2 | CPUUtilization | 80 % |
 | RDS PostgreSQL | CPUUtilization | 80 % |
 
-Las alarmas evalúan el promedio de CPU durante períodos de 300 segundos.
+Las alarmas permiten detectar condiciones de utilización elevada de CPU.
 
-Cuando se cumple la condición de alarma, SNS envía una notificación al correo configurado.
+### 12.2. Notificaciones SNS
 
-También se configuraron notificaciones al volver al estado normal.
+Amazon SNS se utiliza para enviar notificaciones mediante correo electrónico.
 
-### CloudWatch Logs
+Las alarmas CloudWatch están asociadas a un tópico SNS.
 
-Se conservan los grupos de registros históricos de la implementación anterior:
+Para recibir las notificaciones, la suscripción correspondiente debe encontrarse confirmada.
 
-- `/cloud-obligatorio/app/access`
-- `/cloud-obligatorio/app/error`
-- `/cloud-obligatorio/nginx/access`
-- `/cloud-obligatorio/nginx/error`
+### 12.3. Monitoreo del clúster
 
-Estos grupos tienen configurada una retención de 7 días.
+El estado de Kubernetes puede consultarse mediante:
 
-No deben confundirse con una centralización completa de los logs actuales de Kubernetes.
-
-## Estructura del repositorio
-
-La estructura principal del proyecto es:
-
-```text
-Obligatorio-iISC/
-|
-|-- kubernetes/
-|   |-- adservice.yaml
-|   |-- cartservice.yaml
-|   |-- checkoutservice.yaml
-|   |-- currencyservice.yaml
-|   |-- emailservice.yaml
-|   |-- frontend.yaml
-|   |-- frontend-hpa.yaml
-|   |-- paymentservice.yaml
-|   |-- productcatalogservice.yaml
-|   |-- recommendationservice.yaml
-|   |-- redis.yaml
-|   |-- shippingservice.yaml
-|
-|-- terraform/
-|   |-- modules/
-|   |   |-- alb/
-|   |   |-- bastion/
-|   |   |-- database/
-|   |   |-- k3s/
-|   |   |-- monitoring/
-|   |   |-- network/
-|   |   |-- s3/
-|   |   |-- security/
-|   |
-|   |-- backend.tf
-|   |-- main.tf
-|   |-- outputs.tf
-|   |-- variables.tf
-|   |-- terraform.tfvars.example
-|
-|-- Actualizar-SSH-Bastion.ps1
-|-- .gitignore
-|-- README.md
+```bash
+kubectl get nodes
+kubectl get pods -A
+kubectl top nodes
+kubectl top pods
+kubectl get hpa
+kubectl describe hpa frontend-hpa
 ```
 
-Además de los archivos principales, cada módulo contiene sus variables, recursos y outputs correspondientes.
+Estas consultas permiten verificar la disponibilidad de recursos y observar el comportamiento del escalado automático.
 
-Los módulos antiguos de Flask, Compute e IAM propio fueron retirados después de migrar a la arquitectura con K3s.
+## 13. Terraform
 
-## Requisitos previos
+Terraform permite describir los recursos AWS mediante código declarativo.
 
-Para trabajar con esta infraestructura se requiere:
+Se utiliza una estructura modular para organizar los componentes de la infraestructura.
 
-1. Terraform instalado.
-2. AWS CLI configurado con credenciales válidas.
-3. Acceso a una cuenta AWS con permisos suficientes.
-4. Región AWS `us-east-1`.
-5. Un bucket S3 previamente preparado para el estado remoto.
-6. Una clave pública SSH para los recursos que la requieran.
-7. Un perfil IAM compatible con las necesidades de las instancias.
-8. Acceso administrativo al servidor K3s para aplicar los manifiestos Kubernetes.
+### 13.1. Estructura general
 
-En el entorno utilizado se trabajó con:
+```text
+terraform/
+├── main.tf
+├── variables.tf
+├── outputs.tf
+├── providers.tf
+├── modules/
+│   ├── alb/
+│   ├── bastion/
+│   ├── db/
+│   ├── k3s/
+│   ├── monitoring/
+│   ├── network/
+│   ├── s3/
+│   └── security/
+└── ...
+```
 
-- Windows.
-- CMD y PowerShell.
-- Terraform 1.16.6.
+El contenido exacto de cada módulo se organiza mediante los archivos Terraform correspondientes.
+
+### 13.2. Módulos
+
+| Módulo | Responsabilidad |
+|---|---|
+| network | VPC, subredes, IGW, NAT Gateways y rutas |
+| security | Security Groups y reglas de acceso |
+| bastion | Bastion Host |
+| s3 | Buckets S3 |
+| alb | Application Load Balancer y Target Group |
+| k3s | Instancias EC2 del clúster |
+| db | Amazon RDS PostgreSQL |
+| monitoring | CloudWatch y SNS |
+
+### 13.3. Variables
+
+Entre las variables principales se encuentran:
+
+- `region_aws`
+- `nombre_proyecto`
+- `cidr_ssh_bastion`
+- `ruta_clave_publica_ssh`
+- `id_ami_bastion`
+- `usuario_bd`
+- `contrasena_bd`
+- `administrar_contrasena_maestra_rds`
+- `proteccion_eliminacion_rds`
+- `nombre_bucket_aplicacion`
+- `usar_s3_nativo`
+- `correo_alertas`
+- `habilitar_k3s`
+- `nombre_perfil_iam_k3s`
+
+Los valores deben adaptarse al entorno AWS donde se ejecutará la infraestructura.
+
+Las contraseñas y demás secretos no deben incluirse en archivos versionados.
+
+### 13.4. Backend
+
+Terraform utiliza un backend remoto S3.
+
+La configuración del backend requiere que el bucket correspondiente esté creado y disponible antes de inicializar Terraform.
+
+El estado remoto contiene información necesaria para administrar los recursos de infraestructura, por lo que debe protegerse y conservarse.
+
+## 14. Procedimiento de implementación
+
+Esta sección describe el procedimiento general para preparar y desplegar la solución.
+
+La instalación y unión de los nodos K3s debe realizarse con el procedimiento de configuración correspondiente al entorno, antes de aplicar los manifiestos de Online Boutique.
+
+### 14.1. Requisitos
+
+Para trabajar con el proyecto se necesita:
+
+- Una cuenta AWS con permisos adecuados.
+- Terraform.
 - AWS CLI.
-- AWS Academy.
-- `LabInstanceProfile`.
+- Git.
+- Una clave pública SSH cuando corresponda.
+- Acceso administrativo al clúster K3s mediante `kubectl`.
 
-La configuración del módulo S3 para AWS Academy utiliza PowerShell y AWS CLI.
+### 14.2. Obtener el código
 
-## Configuración de Terraform
+```bash
+git clone https://github.com/mbergarap/CLOUD.git
+cd CLOUD
+```
 
-Ingresar al directorio de Terraform:
+### 14.3. Preparar Terraform
 
-```cmd
+Ingresar a la carpeta:
+
+```bash
 cd terraform
 ```
 
-Crear el archivo de variables a partir del ejemplo, verificando previamente que coincida con las variables declaradas en `variables.tf`.
+Configurar los valores de las variables correspondientes al entorno de despliegue.
 
-En PowerShell:
+Es necesario disponer de acceso al backend remoto S3 y de credenciales AWS válidas.
 
-```powershell
-Copy-Item terraform.tfvars.example terraform.tfvars
-```
+### 14.4. Inicializar Terraform
 
-Configurar los valores requeridos para la cuenta AWS utilizada.
-
-Entre los valores que deben revisarse se encuentran:
-
-- Región AWS.
-- Nombre del proyecto.
-- Identificadores y rutas de claves SSH.
-- Dirección IPv4 autorizada para el Bastion.
-- Nombre del bucket de aplicación.
-- Correo para las alertas.
-- Configuración de RDS.
-- Habilitación del clúster K3s.
-- Nombre del perfil IAM de K3s.
-
-En AWS Academy, los nodos K3s utilizan:
-
-```hcl
-nombre_perfil_iam_k3s = "LabInstanceProfile"
-```
-
-El archivo `terraform.tfvars` contiene valores específicos del entorno y no debe incluirse en el repositorio público.
-
-Los nombres exactos de las demás variables deben consultarse en `terraform/variables.tf` y en el archivo de ejemplo actualizado.
-
-## Backend remoto de Terraform
-
-La infraestructura utiliza un backend remoto S3.
-
-El estado remoto permite mantener la información de la infraestructura administrada fuera del equipo local.
-
-Antes de ejecutar Terraform, se debe comprobar:
-
-- Que el bucket de estado existe.
-- Que las credenciales AWS son correctas.
-- Que la configuración del backend corresponde al entorno deseado.
-- Que se está utilizando el estado remoto correcto.
-
-La configuración se encuentra en:
-
-`terraform/backend.tf`
-
-Inicializar Terraform:
-
-```cmd
+```bash
 terraform init
 ```
 
-No se debe reemplazar ni reinicializar el estado de una infraestructura existente utilizando otro bucket sin una migración controlada.
+Este comando prepara el directorio de trabajo, descarga los proveedores necesarios e inicializa el backend configurado.
 
-## Validación de Terraform
+### 14.5. Validar los archivos
 
-Comprobar el formato:
-
-```cmd
+```bash
 terraform fmt -check -recursive
-```
-
-Validar la configuración:
-
-```cmd
 terraform validate
 ```
 
-Revisar los cambios:
+El primer comando comprueba el formato.
 
-```cmd
+El segundo verifica que la configuración sea válida desde el punto de vista estructural.
+
+### 14.6. Revisar los cambios
+
+```bash
 terraform plan
 ```
 
-Antes de ejecutar cualquier aplicación deben revisarse los recursos que Terraform propone crear, modificar o destruir.
+Antes de aplicar la infraestructura deben revisarse todos los recursos que Terraform propone crear, modificar o destruir.
 
-Aplicar la configuración, únicamente después de revisar y autorizar el plan:
+### 14.7. Aplicar la infraestructura
 
-```cmd
+En un entorno autorizado, después de revisar el plan:
+
+```bash
 terraform apply
 ```
 
-**Advertencia:** ejecutar Terraform sobre una infraestructura ya desplegada puede modificar recursos existentes. No debe utilizarse `terraform apply` sin analizar previamente el plan.
+**Advertencia:** este comando puede modificar recursos existentes. No debe ejecutarse sin analizar previamente el plan y el impacto de los cambios.
 
-## Despliegue de Kubernetes
+La instalación y configuración del clúster K3s debe completarse conforme a su procedimiento específico.
 
-Los manifiestos de Online Boutique se encuentran en:
+### 14.8. Verificar los nodos K3s
 
-`kubernetes/`
-
-Para desplegar la aplicación es necesario disponer previamente de:
-
-- Un clúster K3s operativo.
-- Acceso administrativo mediante `kubectl`.
-- Los nodos correctamente incorporados al clúster.
-- Los componentes de red necesarios.
-- Disponibilidad de las imágenes de los microservicios.
-- Metrics Server operativo para utilizar el HPA.
-
-### Comprobar los nodos
-
-Desde el servidor K3s:
+Con el clúster configurado:
 
 ```bash
 kubectl get nodes -o wide
 ```
 
-### Desplegar Online Boutique
+Los tres nodos deben aparecer en estado `Ready`.
 
-Desde un equipo con acceso administrativo al clúster y con los manifiestos disponibles:
+### 14.9. Desplegar Online Boutique
+
+Desde la raíz del repositorio, con `kubectl` conectado al clúster correcto:
 
 ```bash
 kubectl apply -f kubernetes/
 ```
 
-Este comando supone que el directorio `kubernetes/` está disponible localmente y que `kubectl` está configurado para acceder al clúster correspondiente.
+Este comando aplica los manifiestos Kubernetes de la aplicación y del HPA.
 
-Antes de utilizarlo en una infraestructura existente, revisar los cambios con:
-
-```bash
-kubectl diff -f kubernetes/
-```
-
-Para consultar los Deployments:
+### 14.10. Verificar el despliegue
 
 ```bash
-kubectl get deployments -n default
+kubectl get deployments
+kubectl get pods
+kubectl get services
+kubectl get hpa
 ```
 
-Consultar los Services:
+Se debe comprobar que los Deployments estén disponibles y que los pods se encuentren en estado `Running` y `Ready`.
+
+### 14.11. Comprobar la aplicación
+
+Una vez configurado el ALB, verificar que Online Boutique responda mediante la dirección pública.
+
+También puede utilizarse:
 
 ```bash
-kubectl get services -n default
+curl -I http://cloud-obligatorio-alb-643673029.us-east-1.elb.amazonaws.com/
 ```
 
-Consultar los pods y sus nodos:
+La respuesta esperada es:
 
-```bash
-kubectl get pods -o wide -n default
-```
+`HTTP/1.1 200 OK`
 
-### Verificar el HPA
+## 15. Verificaciones realizadas
 
-```bash
-kubectl get hpa -n default
-```
+Se realizaron pruebas funcionales y operativas de la infraestructura y de la aplicación.
 
-Consultar más información:
+| Verificación | Resultado |
+|---|---|
+| ALB público | Operativo |
+| Respuesta HTTP de Online Boutique | HTTP 200 |
+| Nodos K3s | 3/3 Ready |
+| Frontend | Réplicas disponibles |
+| Distribución del frontend | Dos AZ |
+| HPA | Métricas de CPU disponibles |
+| Escalado horizontal | 2 → 4 réplicas |
+| Reducción automática | 4 → 2 réplicas |
+| Prueba HTTP bajo carga | 4.898 solicitudes exitosas |
+| Errores HTTP durante la prueba | 0 |
+| Recuperación ante eliminación de pod | Exitosa |
+| Disponibilidad posterior a recuperación | Verificada |
 
-```bash
-kubectl describe hpa frontend-hpa -n default
-```
+### 15.1. Consumo de recursos
 
-La configuración del frontend incluye las restricciones de distribución entre zonas de disponibilidad.
+Durante una verificación del clúster se registraron los siguientes valores:
 
-El directorio `kubernetes/` contiene los manifiestos de los servicios y del HPA, pero no constituye por sí solo un instalador completo de K3s. La preparación de las instancias, sus permisos y la instalación del clúster también deben considerarse al reproducir el entorno.
+| Nodo | Utilización CPU | Utilización memoria |
+|---|---|---|
+| K3s Server | 4 % | 25 % |
+| K3s Worker 1 | 2 % | 23 % |
+| K3s Worker 2 | 2 % | 20 % |
 
-## Pruebas y verificaciones
+Estos valores corresponden a una medición puntual y pueden variar dependiendo de la carga.
 
-Durante el desarrollo se realizaron verificaciones de la infraestructura y del clúster.
+### 15.2. Resultados de escalabilidad
 
-### Acceso público
+La prueba de carga confirmó que el HPA fue capaz de aumentar y reducir automáticamente las réplicas del frontend.
 
-Se comprobó el acceso al ALB mediante HTTP.
+No fue necesario modificar manualmente el número de pods para producir el escalado.
 
-Resultado observado:
+### 15.3. Resultados de recuperación
 
-`HTTP 200`
+La eliminación controlada de un pod permitió comprobar el funcionamiento del controlador de Deployment.
 
-### Estado de K3s
+Kubernetes creó automáticamente un pod de reemplazo y recuperó la cantidad de réplicas configurada.
 
-Se comprobó que los tres nodos estuvieran registrados y en estado `Ready`.
+## 16. Disponibilidad y limitaciones
 
-### Disponibilidad de la aplicación
-
-Se verificó que los 11 Deployments de Online Boutique estuvieran disponibles.
-
-El frontend contaba con dos réplicas activas.
-
-### Distribución entre zonas
-
-Se comprobó la ejecución de una réplica del frontend en cada zona de disponibilidad.
-
-### Escalado
-
-Se verificó la existencia y funcionamiento del HPA con:
-
-- Mínimo: 2 réplicas.
-- Máximo: 4 réplicas.
-- CPU objetivo: 60 %.
-
-La presencia de un HPA operativo no constituye por sí sola una prueba completa de escalado bajo carga. Para verificar el aumento efectivo de réplicas se requiere generar y observar una carga suficiente.
-
-### Monitoreo
-
-Se comprobó la existencia de las alarmas de CloudWatch para K3s y RDS, junto con la integración con SNS.
-
-## Tolerancia a fallos
-
-La infraestructura incorpora mecanismos de redundancia:
+La arquitectura incorpora mecanismos que contribuyen a mejorar la disponibilidad:
 
 - Dos zonas de disponibilidad.
-- Dos subredes públicas.
-- Dos NAT Gateway.
-- Dos subredes de aplicación.
-- Dos subredes privadas de base de datos.
-- ALB distribuido entre zonas.
-- Frontend replicado entre AZ.
+- Application Load Balancer.
+- Tres nodos K3s.
+- Réplicas del frontend.
+- Distribución de frontend entre zonas.
+- Recuperación automática de pods.
+- HPA.
+- NAT Gateways por zona.
 - RDS Multi-AZ.
 
-Estos mecanismos reducen el impacto de determinadas fallas.
+Sin embargo, la solución presenta limitaciones que deben considerarse.
 
-Sin embargo, existen limitaciones:
+**Control Plane único:** el servidor K3s no cuenta con una réplica del plano de control.
 
-- Un único servidor K3s Control Plane.
-- Los nodos EC2 de K3s no se escalan automáticamente.
-- Varios microservicios internos tienen una sola réplica.
-- La distribución del frontend entre AZ no implica que todos los componentes de la aplicación tengan la misma redundancia.
+**Microservicios internos:** no todos los componentes de Online Boutique disponen de múltiples réplicas.
 
-Por lo tanto, la solución implementa tolerancia parcial a fallos, pero no garantiza alta disponibilidad completa de todos sus componentes.
+**HTTP público:** el ALB utiliza HTTP y no tiene configurada terminación HTTPS en esta implementación.
 
-## Mejoras futuras
+**Escalabilidad de nodos:** el HPA ajusta la cantidad de pods del frontend, pero no implica un aumento automático de la cantidad de instancias EC2 del clúster.
 
-Como posibles mejoras de la arquitectura se identifican:
+**Integración de RDS:** RDS funciona como componente independiente, sin conexión con Online Boutique.
 
-1. Implementar alta disponibilidad del Control Plane de Kubernetes.
-2. Incorporar escalado automático de nodos EC2.
-3. Aumentar las réplicas de los microservicios internos críticos.
-4. Implementar pruebas automáticas de carga y recuperación.
-5. Centralizar los registros actuales de Kubernetes.
-6. Incorporar HTTPS mediante un certificado TLS.
-7. Implementar mecanismos adicionales de observabilidad y métricas de aplicación.
-8. Automatizar de manera completa la preparación y configuración inicial de K3s.
+Estas limitaciones distinguen la funcionalidad implementada de una arquitectura de alta disponibilidad completa.
 
-Estas mejoras no forman parte de todos los componentes ya desplegados, sino que representan posibles ampliaciones futuras.
+## 17. Posibles mejoras
 
-## Costos
+Como futuras mejoras se identifican:
 
-La infraestructura utiliza servicios de AWS que pueden generar costos, incluso cuando la aplicación recibe poco tráfico.
+1. Implementar alta disponibilidad del Control Plane K3s.
+2. Incorporar múltiples réplicas para más microservicios.
+3. Implementar HTTPS mediante certificados y un listener TLS en el ALB.
+4. Automatizar el escalado de los nodos del clúster.
+5. Ampliar el monitoreo y la observabilidad de Kubernetes.
+6. Consolidar un procedimiento completamente automatizado y reproducible para la configuración de K3s.
+7. Realizar pruebas controladas de fallo de instancias o zonas de disponibilidad.
 
-Los principales componentes que deben considerarse son:
+Estas mejoras no se consideran implementadas en la solución actual.
 
-- Instancias EC2 de K3s.
-- Instancia EC2 del Bastion.
-- NAT Gateway.
+## 18. Costos y administración
+
+Los servicios utilizados pueden generar costos mientras permanezcan activos.
+
+Entre los principales componentes se encuentran:
+
+- Amazon EC2.
 - Application Load Balancer.
-- Amazon RDS Multi-AZ.
+- NAT Gateways.
+- Amazon RDS.
 - Amazon S3.
-- CloudWatch.
-- Transferencia de datos.
+- Amazon CloudWatch.
 
-AWS Academy puede imponer restricciones de permisos, crédito disponible y duración del laboratorio.
+El uso de múltiples zonas de disponibilidad y componentes redundantes puede incrementar el costo de operación.
 
-Se recomienda revisar periódicamente los recursos y su consumo antes de mantener el entorno encendido durante períodos prolongados.
+Se recomienda revisar los recursos activos y controlar los costos del entorno AWS durante el desarrollo y las pruebas.
 
-## Consideraciones de seguridad y operación
+La eliminación de infraestructura debe realizarse de forma controlada.
 
-- No publicar credenciales ni claves privadas.
-- Conservar la restricción SSH del Bastion.
-- Utilizar siempre el estado remoto correcto.
-- Revisar cualquier plan Terraform antes de aplicarlo.
-- No eliminar buckets ni bases de datos sin verificar sus dependencias.
-- No modificar las reglas de seguridad sin confirmar el impacto.
-- Evitar aplicar manifiestos Kubernetes antiguos sobre configuraciones actualizadas.
-- Verificar los recursos desplegados después de cada cambio importante.
+No se debe ejecutar `terraform destroy` ni eliminar el bucket utilizado como backend remoto sin analizar previamente las consecuencias.
 
-## Uso de inteligencia artificial
+## 19. Control de versiones
 
-Durante el desarrollo se utilizaron herramientas de inteligencia artificial como apoyo para el análisis de errores, consultas técnicas, revisión de configuraciones, preparación de comandos y documentación.
+El proyecto utiliza Git para mantener versionados:
 
-Las decisiones de arquitectura, las modificaciones sobre AWS y las validaciones de funcionamiento se realizaron y supervisaron durante el proceso de implementación.
+- Los archivos Terraform.
+- Los módulos de infraestructura.
+- Los manifiestos Kubernetes.
+- La documentación.
 
-## Conclusión
+Repositorio de desarrollo:
 
-El proyecto implementa una infraestructura de nube en AWS administrada principalmente mediante Terraform y orientada a ejecutar la aplicación Online Boutique mediante un clúster K3s.
+https://github.com/mbergarap/CLOUD
 
-La solución combina separación de redes, balanceo de carga, contenedores, escalabilidad horizontal de pods, base de datos administrada, almacenamiento S3 y monitoreo mediante CloudWatch y SNS.
+El control de versiones permite registrar modificaciones, revisar cambios y mantener una referencia del código utilizado para administrar la infraestructura.
 
-La utilización de dos zonas de disponibilidad mejora la distribución de la infraestructura, mientras que las pruebas y el análisis de limitaciones permiten identificar tanto las capacidades implementadas como las posibles mejoras de disponibilidad y escalabilidad.
+## 20. Conclusión
+
+El obligatorio de Soluciones Cloud permitió implementar una solución de infraestructura AWS administrada mediante Terraform y orientada a ejecutar una aplicación de microservicios sobre Kubernetes.
+
+La arquitectura integra redes privadas, balanceo de carga, cómputo, almacenamiento, base de datos administrada, seguridad, monitoreo y notificaciones.
+
+Online Boutique se ejecuta sobre un clúster K3s distribuido entre dos zonas de disponibilidad, con acceso público mediante un Application Load Balancer.
+
+Las pruebas realizadas permitieron demostrar:
+
+- Disponibilidad de la aplicación a través del ALB.
+- Escalabilidad horizontal automática del frontend.
+- Reducción automática de réplicas al disminuir la carga.
+- Recuperación automática frente a la eliminación de un pod.
+- Distribución de réplicas entre ambas zonas de disponibilidad.
+- Funcionamiento de los mecanismos de monitoreo y consulta de métricas.
+
+El proyecto permite aplicar conceptos fundamentales de Soluciones Cloud mediante una infraestructura funcional, modular y administrada como código, reconociendo las limitaciones técnicas de la implementación y las oportunidades de mejora para alcanzar mayores niveles de disponibilidad y automatización.
