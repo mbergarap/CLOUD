@@ -3,7 +3,6 @@ kind: Kustomization
 
 resources:
   - online-boutique-base.yaml
-  - fluent-bit.yaml
   - pdb.yaml
 
 patches:
@@ -13,3 +12,4 @@ patches:
   - path: patch-remove-redis-deployment.yaml
   - path: patch-remove-redis-service.yaml
   - path: patch-remove-frontend-external.yaml
+  - path: patch-remove-loadgenerator.yaml
