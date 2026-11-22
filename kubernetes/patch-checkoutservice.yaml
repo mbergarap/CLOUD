@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkoutservice
+spec:
+  template:
+    spec:
+      containers:
+        - name: server
+          image: matiasbp/online-boutique-compras:1.2
+          env:
+            - name: PGHOST
+              valueFrom:
+                configMapKeyRef:
+                  name: infra-endpoints
+                  key: PGHOST
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: "cloudapp"
+            - name: PGUSER
+              valueFrom:
+                configMapKeyRef:
+                  name: infra-endpoints
+                  key: PGUSER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: checkout-rds
+                  key: PGPASSWORD
+            - name: PGSSLMODE
+              value: "require"
