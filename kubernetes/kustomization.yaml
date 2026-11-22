@@ -1,0 +1,14 @@
+﻿apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - online-boutique-base.yaml
+  - fluent-bit.yaml
+  - pdb.yaml
+
+patches:
+  - path: patch-frontend.yaml
+  - path: patch-cartservice.yaml
+  - path: patch-remove-redis-deployment.yaml
+  - path: patch-remove-redis-service.yaml
+  - path: patch-remove-frontend-external.yaml

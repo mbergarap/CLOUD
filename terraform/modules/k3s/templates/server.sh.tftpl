@@ -52,7 +52,7 @@ unset DBPASS
 # Despliegue de Online Boutique desde el repositorio.
 rm -rf /opt/app
 git clone --depth 1 --branch "${rama_manifiestos}" "${repo_manifiestos}" /opt/app
-k3s kubectl apply -f "/opt/app/${ruta_manifiestos}/"
+k3s kubectl apply -k "/opt/app/${ruta_manifiestos}/"
 
 # Logs centralizados en CloudWatch.
 cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWEOF'
@@ -71,3 +71,45 @@ cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWEOF'
 CWEOF
 /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s \
   -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+# Validacion final de Online Boutique.
+echo "Verificando deployments de Online Boutique..."
+
+SERVICIOS=(
+  adservice
+  cartservice
+  checkoutservice
+  currencyservice
+  emailservice
+  frontend
+  paymentservice
+  productcatalogservice
+  recommendationservice
+  shippingservice
+)
+
+for servicio in "$${SERVICIOS[@]}"; do
+  if ! k3s kubectl get deployment "$servicio" -n default >/dev/null 2>&1; then
+    echo "ERROR: Falta el deployment $servicio"
+    exit 1
+  fi
+done
+
+echo "Esperando los deployments de Online Boutique..."
+k3s kubectl wait --for=condition=available deployment --all \
+  --namespace default --timeout=900s
+
+echo "Verificando NodePort del frontend..."
+PUERTO=$(k3s kubectl get service frontend \
+  -o jsonpath='{.spec.ports[0].nodePort}')
+
+if [ "$PUERTO" != "30080" ]; then
+  echo "ERROR: NodePort incorrecto: $PUERTO"
+  exit 1
+fi
+
+echo "Verificando respuesta HTTP del frontend..."
+curl -fsS --retry 20 --retry-delay 5 --retry-connrefused \
+  http://127.0.0.1:30080/ -o /dev/null
+
+echo "Online Boutique desplegada correctamente."

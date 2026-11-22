@@ -1,0 +1,1 @@
+terraform/modules/k3s/templates/*.tftpl text eol=lf
