@@ -1,4 +1,4 @@
-﻿apiVersion: apps/v1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cartservice
@@ -9,6 +9,7 @@ spec:
         - name: server
           env:
             - name: REDIS_ADDR
+              value: null
               valueFrom:
                 configMapKeyRef:
                   name: infra-endpoints
