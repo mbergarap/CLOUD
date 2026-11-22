@@ -105,6 +105,7 @@ module "database" {
   id_sg_rds = module.security.id_sg_rds
 
   usuario_bd = var.usuario_bd
+  contrasena_bd = var.contrasena_bd
 
   # En AWS Academy utilizamos la contrasena configurada.
   # En una cuenta estandar podemos administrarla con Secrets Manager.
@@ -169,7 +170,9 @@ module "k3s" {
   rama_manifiestos  = var.rama_manifiestos
   direccion_bd      = module.database.direccion_bd
   usuario_bd        = var.usuario_bd
-  arn_secreto_bd    = module.database.arn_secreto_bd
+  arn_secreto_bd = var.administrar_contrasena_maestra_rds ? module.database.arn_secreto_bd : ""
+  parametro_contrasena_bd = var.administrar_contrasena_maestra_rds ? "" : aws_ssm_parameter.rds_password[0].name
+  usar_secrets_manager_bd = var.administrar_contrasena_maestra_rds
   endpoint_redis    = module.elasticache[0].endpoint_redis
   nombre_grupo_logs = local.nombre_grupo_logs
 }
@@ -270,4 +273,13 @@ module "respaldos" {
   nombre_rol_iam  = var.nombre_rol_aws_backup
   dias_retencion  = var.dias_retencion_respaldos
   arns_recursos   = [module.database.arn_bd]
+}
+
+# Contrasena de RDS para el bootstrap K3s en AWS Academy.
+resource "aws_ssm_parameter" "rds_password" {
+  count = var.habilitar_k3s && !var.administrar_contrasena_maestra_rds ? 1 : 0
+
+  name  = "/${var.nombre_proyecto}/rds/password"
+  type  = "SecureString"
+  value = var.contrasena_bd
 }

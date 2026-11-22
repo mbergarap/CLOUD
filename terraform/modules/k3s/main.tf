@@ -111,7 +111,9 @@ resource "aws_instance" "server" {
   user_data = templatefile("${path.module}/templates/server.sh.tftpl", {
     region           = data.aws_region.current.name
     parametro_token  = aws_ssm_parameter.join.name
-    arn_secreto_bd   = var.arn_secreto_bd
+    arn_secreto_bd = var.arn_secreto_bd
+    parametro_contrasena_bd = var.parametro_contrasena_bd
+    usar_secrets_manager_bd = tostring(var.usar_secrets_manager_bd)
     direccion_bd     = var.direccion_bd
     usuario_bd       = var.usuario_bd
     endpoint_redis   = var.endpoint_redis

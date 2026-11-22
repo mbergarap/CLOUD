@@ -159,3 +159,15 @@ variable "cidrs_subredes_bd" {
   description = "CIDRs de las subredes de base de datos."
   type        = list(string)
 }
+
+variable "parametro_contrasena_bd" {
+  description = "Nombre del parametro SSM con la contrasena de RDS."
+  type        = string
+  default     = ""
+}
+
+variable "usar_secrets_manager_bd" {
+  description = "Indica si la contrasena de RDS se obtiene de Secrets Manager."
+  type        = bool
+  default     = false
+}

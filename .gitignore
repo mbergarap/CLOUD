@@ -8,3 +8,5 @@
 .env
 .env.*
 state-backup.json
+/terraform/*.tfplan
+/terraform/tfplan

@@ -19,6 +19,7 @@ get_param() {
 
 TOKEN=$(get_param "${parametro_token}")
 DBPASS=""
+if [ "${usar_secrets_manager_bd}" = "true" ]; then
 for intento in $(seq 1 40); do
   DBPASS=$(aws secretsmanager get-secret-value \
     --secret-id "${arn_secreto_bd}" \
@@ -27,7 +28,10 @@ for intento in $(seq 1 40); do
   [ -n "$DBPASS" ] && break
   sleep 15
 done
-[ -n "$DBPASS" ] || { echo "Error leyendo Secrets Manager"; exit 1; }
+else
+  DBPASS=$(get_param "${parametro_contrasena_bd}")
+fi
+[ -n "$DBPASS" ] || { echo "Error leyendo la contrasena de RDS"; exit 1; }
 
 dnf install -y git amazon-cloudwatch-agent
 
@@ -43,7 +47,7 @@ k3s kubectl create configmap infra-endpoints \
   --from-literal=REDIS_ADDR="${endpoint_redis}:6379,ssl=true,abortConnect=false" \
   --dry-run=client -o yaml | k3s kubectl apply -f -
 
-# Secret con la clave de RDS, tomada de Secrets Manager (nunca pasa por Git).
+# Secret de RDS obtenido de SSM o Secrets Manager (nunca pasa por Git).
 printf '%s' "$DBPASS" | k3s kubectl create secret generic checkout-rds \
   --from-file=PGPASSWORD=/dev/stdin \
   --dry-run=client -o yaml | k3s kubectl apply -f -

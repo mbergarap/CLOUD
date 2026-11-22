@@ -135,3 +135,11 @@ variable "dias_retencion_respaldos" {
   type        = number
   default     = 14
 }
+
+# Contrasena de RDS utilizada en AWS Academy.
+variable "contrasena_bd" {
+  description = "Contrasena de PostgreSQL para AWS Academy."
+  type        = string
+  sensitive   = true
+  default     = null
+}
