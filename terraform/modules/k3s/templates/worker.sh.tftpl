@@ -1,0 +1,48 @@
+#!/bin/bash
+# Bootstrap de worker K3s (Auto Scaling Group). Registro: /var/log/k3s-bootstrap.log
+set -euo pipefail
+exec > >(tee /var/log/k3s-bootstrap.log) 2>&1
+export AWS_DEFAULT_REGION="${region}"
+
+TOKEN=""
+for attempt in $(seq 1 40); do
+  TOKEN=$(aws ssm get-parameter --name "${parametro_token}" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || true)
+  if [ -n "$TOKEN" ] && [ "$TOKEN" != "None" ]; then
+    break
+  fi
+  sleep 15
+done
+[ -n "$TOKEN" ] && [ "$TOKEN" != "None" ] || exit 1
+
+for attempt in $(seq 1 60); do
+  if curl -ksSf --connect-timeout 3 "https://${ip_servidor}:6443/ping" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 10
+done
+
+dnf install -y amazon-cloudwatch-agent
+
+IMDS_TOKEN=$(curl -fsS --connect-timeout 3 -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+AZ=$(curl -fsS --connect-timeout 3 -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" "http://169.254.169.254/latest/meta-data/placement/availability-zone")
+
+[ -n "$AZ" ] || exit 1
+echo "Zona del worker: $AZ"
+curl -sfL https://get.k3s.io | K3S_URL="https://${ip_servidor}:6443" K3S_TOKEN="$TOKEN" INSTALL_K3S_EXEC="agent --node-label topology.kubernetes.io/zone=$AZ" sh -
+
+cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWEOF'
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          { "file_path": "/var/log/k3s-bootstrap.log", "log_group_name": "${grupo_logs}", "log_stream_name": "{instance_id}/bootstrap" },
+          { "file_path": "/var/log/pods/*/*/*.log",    "log_group_name": "${grupo_logs}", "log_stream_name": "{instance_id}/pods" }
+        ]
+      }
+    }
+  }
+}
+CWEOF
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json

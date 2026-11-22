@@ -1,0 +1,73 @@
+#!/bin/bash
+# Bootstrap del servidor K3s. Registro: /var/log/k3s-bootstrap.log
+set -euo pipefail
+exec > >(tee /var/log/k3s-bootstrap.log) 2>&1
+export AWS_DEFAULT_REGION="${region}"
+
+# Lee un parametro cifrado de SSM (reintenta hasta que exista).
+get_param() {
+  for attempt in $(seq 1 40); do
+    V=$(aws ssm get-parameter --name "$1" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || true)
+    if [ -n "$V" ] && [ "$V" != "None" ]; then
+      echo "$V"
+      return 0
+    fi
+    sleep 15
+  done
+  return 1
+}
+
+TOKEN=$(get_param "${parametro_token}")
+DBPASS=""
+for intento in $(seq 1 40); do
+  DBPASS=$(aws secretsmanager get-secret-value \
+    --secret-id "${arn_secreto_bd}" \
+    --query SecretString --output text 2>/dev/null |
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["password"])' 2>/dev/null) || true
+  [ -n "$DBPASS" ] && break
+  sleep 15
+done
+[ -n "$DBPASS" ] || { echo "Error leyendo Secrets Manager"; exit 1; }
+
+dnf install -y git amazon-cloudwatch-agent
+
+curl -sfL https://get.k3s.io | K3S_TOKEN="$TOKEN" INSTALL_K3S_EXEC='server --write-kubeconfig-mode 600 --disable traefik --disable servicelb --secrets-encryption' sh -
+
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+until k3s kubectl get nodes >/dev/null 2>&1; do sleep 5; done
+
+# Endpoints de RDS y Redis generados por Terraform (los manifiestos no llevan hosts fijos).
+k3s kubectl create configmap infra-endpoints \
+  --from-literal=PGHOST="${direccion_bd}" \
+  --from-literal=PGUSER="${usuario_bd}" \
+  --from-literal=REDIS_ADDR="${endpoint_redis}:6379,ssl=true,abortConnect=false" \
+  --dry-run=client -o yaml | k3s kubectl apply -f -
+
+# Secret con la clave de RDS, tomada de Secrets Manager (nunca pasa por Git).
+printf '%s' "$DBPASS" | k3s kubectl create secret generic checkout-rds \
+  --from-file=PGPASSWORD=/dev/stdin \
+  --dry-run=client -o yaml | k3s kubectl apply -f -
+unset DBPASS
+
+# Despliegue de Online Boutique desde el repositorio.
+rm -rf /opt/app
+git clone --depth 1 --branch "${rama_manifiestos}" "${repo_manifiestos}" /opt/app
+k3s kubectl apply -f "/opt/app/${ruta_manifiestos}/"
+
+# Logs centralizados en CloudWatch.
+cat >/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json <<'CWEOF'
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          { "file_path": "/var/log/k3s-bootstrap.log", "log_group_name": "${grupo_logs}", "log_stream_name": "{instance_id}/bootstrap" },
+          { "file_path": "/var/log/pods/*/*/*.log",    "log_group_name": "${grupo_logs}", "log_stream_name": "{instance_id}/pods" }
+        ]
+      }
+    }
+  }
+}
+CWEOF
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json

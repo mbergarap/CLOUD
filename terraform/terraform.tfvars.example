@@ -1,0 +1,62 @@
+
+# CONFIGURACION GENERAL
+
+region_aws     = "us-east-1"
+nombre_proyecto = "cloud-obligatorio"
+
+# ACCESO SSH
+
+# Reemplazar por la IP publica autorizada para administrar el Bastion.
+cidr_ssh_bastion = "REEMPLAZAR_IP_PUBLICA/32"
+
+# Ruta de la clave publica SSH utilizada por el Bastion.
+ruta_clave_publica_ssh = "REEMPLAZAR_RUTA_CLAVE_PUBLICA"
+
+# AMI del Bastion, valida para la region seleccionada.
+id_ami_bastion = "REEMPLAZAR_AMI_BASTION"
+
+# BASE DE DATOS
+
+usuario_bd  = "cloudadmin"
+contrasena_bd = "REEMPLAZAR_CON_CONTRASENA_SEGURA"
+
+administrar_contrasena_maestra_rds = false
+proteccion_eliminacion_rds         = true
+
+# ALMACENAMIENTO S3
+
+# Debe ser un nombre globalmente unico.
+nombre_bucket_aplicacion = "REEMPLAZAR_BUCKET_APLICACION"
+
+# AWS Academy: false.
+# Cuentas con permisos completos para administrar S3: true.
+usar_s3_nativo = false
+
+# MONITOREO
+
+correo_alertas = "REEMPLAZAR_CORREO"
+
+# KUBERNETES K3S
+
+habilitar_k3s = true
+
+# Perfil IAM existente utilizado por las instancias K3s en AWS Academy.
+nombre_perfil_iam_k3s = "LabInstanceProfile"
+
+# AUTOESCALADO DE WORKERS K3S
+
+workers_minimo  = 2
+workers_deseado = 2
+workers_maximo  = 4
+
+# Repositorio y rama desde los que K3s despliega Online Boutique al iniciar.
+repo_manifiestos = "https://github.com/mbergarap/CLOUD.git"
+rama_manifiestos = "main"
+
+# RESPALDOS CENTRALIZADOS (AWS Backup)
+
+# Requiere que el laboratorio permita AWS Backup. Si falla, dejar en false:
+# RDS mantiene sus backups automaticos (7 dias) y Redis sus snapshots.
+habilitar_aws_backup     = false
+nombre_rol_aws_backup    = "LabRole"
+dias_retencion_respaldos = 14
