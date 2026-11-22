@@ -2,7 +2,11 @@ terraform {
   required_version = ">= 1.5.0"
 }
 
+# Crea (si hace falta) el bucket S3 donde se guarda el estado remoto de Terraform.
 resource "terraform_data" "backend_bucket" {
+  # Si cambia el nombre del bucket (por ejemplo, otra cuenta AWS), Terraform
+  # vuelve a ejecutar el script en vez de dar por hecho que el bucket ya existe.
+  triggers_replace = var.nombre_bucket_estado
 
   provisioner "local-exec" {
     interpreter = ["PowerShell", "-Command"]
