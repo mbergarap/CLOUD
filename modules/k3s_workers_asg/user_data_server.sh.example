@@ -1,0 +1,21 @@
+#!/bin/bash
+# EJEMPLO para el user_data del K3s SERVER (adaptalo en tu modulo k3s).
+# Instala K3s y publica el token en SSM para que los workers del ASG se unan solos.
+set -euo pipefail
+exec > >(tee /var/log/k3s-server-init.log) 2>&1
+
+REGION="us-east-1"
+TOKEN_PARAM="/cloud-obligatorio/k3s/token"
+
+IMDS_TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
+PRIVATE_IP=$(curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+
+# Opcional (control plane HA): agregar --datastore-endpoint="postgres://user:pass@host:5432/k3s"
+curl -sfL https://get.k3s.io | sh -s - server \
+  --disable traefik --disable servicelb \
+  --write-kubeconfig-mode 644 \
+  --tls-san "$PRIVATE_IP"
+
+until [ -f /var/lib/rancher/k3s/server/node-token ]; do sleep 3; done
+aws ssm put-parameter --region "$REGION" --name "$TOKEN_PARAM" --type SecureString \
+  --overwrite --value "$(cat /var/lib/rancher/k3s/server/node-token)"
