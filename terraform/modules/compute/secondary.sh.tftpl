@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+exec > >(tee /var/log/isc-k3s-install.log | logger -t isc-k3s -s 2>/dev/console) 2>&1
+dnf install -y nfs-utils
+command -v curl >/dev/null
+for i in $(seq 1 120); do
+  if timeout 2 bash -c 'echo > /dev/tcp/${server_ip}/6443' 2>/dev/null; then break; fi
+  sleep 10
+done
+timeout 5 bash -c 'echo > /dev/tcp/${server_ip}/6443'
+curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC='server --server https://${server_ip}:6443 --disable traefik --disable servicelb --write-kubeconfig-mode 600' K3S_TOKEN='${token}' sh -
+systemctl is-active --quiet k3s

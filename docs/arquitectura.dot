@@ -1,0 +1,25 @@
+digraph arquitectura {
+  graph [label="Online Boutique · Arquitectura AWS minimalista", labelloc=t, fontsize=20, fontname="DejaVu Sans", ranksep=0.5, nodesep=0.3, bgcolor="white"];
+  node [shape=box, style="rounded,filled", fillcolor="#F2F6FA", fontname="DejaVu Sans", fontsize=10];
+  edge [color="#4A647B", arrowsize=0.7];
+  users [label="Usuarios / Internet"];
+  alb [label="ALB público\nHTTP 80 → NodePort 30080", fillcolor="#E0EDFC"];
+  users -> alb;
+  subgraph cluster_vpc {
+    label="VPC 10.80.0.0/16 · us-east-1";
+    style="rounded,dashed";
+    color="#9EB8D3";
+    subgraph cluster_a { label="AZ 1"; color="#C8D7EA"; pub1 [label="Pública 10.80.1.0/24\nNAT 1"]; priv1 [label="Privada 10.80.10.0/24\nEC2 t3.medium / K3s 1"]; pub1 -> priv1 [label="NAT salida"]; }
+    subgraph cluster_b { label="AZ 2"; color="#C8D7EA"; pub2 [label="Pública 10.80.2.0/24\nNAT 2"]; priv2 [label="Privada 10.80.20.0/24\nEC2 t3.medium / K3s 2"]; pub2 -> priv2 [label="NAT salida"]; }
+    subgraph cluster_c { label="AZ 3"; color="#C8D7EA"; pub3 [label="Pública 10.80.3.0/24\nNAT 3"]; priv3 [label="Privada 10.80.30.0/24\nEC2 t3.medium / K3s 3"]; pub3 -> priv3 [label="NAT salida"]; }
+    app [label="Online Boutique · 10 microservicios\nFrontend HPA 2–4 pods", fillcolor="#E7F7ED"];
+    redis [label="Redis único + EFS (3 mount targets)\nAWS Backup diario · 7 días",fillcolor="#FFF3D9"];
+    priv1 -> app; priv2 -> app; priv3 -> app;
+    app -> redis;
+  }
+  alb -> priv1; alb -> priv2; alb -> priv3;
+  monitor [label="CloudWatch CPU/ALB → SNS correo",fillcolor="#F5EBFE"];
+  state [label="Terraform State · S3 cifrado y versionado",fillcolor="#F5EBFE"];
+  app -> monitor [style=dashed];
+  monitor -> state [style=invis];
+}

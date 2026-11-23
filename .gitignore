@@ -1,0 +1,30 @@
+﻿# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+*.tfbackend
+crash.log
+crash.*.log
+
+# Credenciales y claves
+.aws/
+*.pem
+*.key
+*.p12
+*.pfx
+kubeconfig*
+*.kubeconfig
+.env
+.env.*
+
+# Archivos temporales
+*.log
+*.tmp
+*.bak
+*.zip
+
+# Configuracion personal
+config.psd1
