@@ -28,7 +28,7 @@ resource "random_password" "k3s_token" {
 # SERVIDORES KUBERNETES
 resource "aws_instance" "primary" {
   ami                         = data.aws_ami.al2023.id
-  instance_type               = "t3.medium"
+  instance_type               = var.tipo_instancia
   subnet_id                   = var.private_subnets[0]
   associate_public_ip_address = false
   vpc_security_group_ids      = [var.k3s_sg_id]
@@ -37,6 +37,9 @@ resource "aws_instance" "primary" {
   user_data = templatefile("${path.module}/primary.sh.tftpl", {
     token       = random_password.k3s_token.result
     etcd_bucket = var.etcd_bucket
+    region      = var.region
+    k3s_version = var.version_k3s
+    log_group   = var.log_group
   })
 
   metadata_options {
@@ -55,14 +58,14 @@ resource "aws_instance" "primary" {
   }
 
   tags = {
-    Name = "isc-obligatorio-k3s-1"
+    Name = "${var.nombre_proyecto}-k3s-1"
   }
 }
 
 resource "aws_instance" "secondary" {
   count                       = 2
   ami                         = data.aws_ami.al2023.id
-  instance_type               = "t3.medium"
+  instance_type               = var.tipo_instancia
   subnet_id                   = var.private_subnets[count.index + 1]
   associate_public_ip_address = false
   vpc_security_group_ids      = [var.k3s_sg_id]
@@ -72,6 +75,9 @@ resource "aws_instance" "secondary" {
     token       = random_password.k3s_token.result
     server_ip   = aws_instance.primary.private_ip
     etcd_bucket = var.etcd_bucket
+    region      = var.region
+    k3s_version = var.version_k3s
+    log_group   = var.log_group
   })
 
   metadata_options {
@@ -90,22 +96,23 @@ resource "aws_instance" "secondary" {
   }
 
   tags = {
-    Name = "isc-obligatorio-k3s-${count.index + 2}"
+    Name = "${var.nombre_proyecto}-k3s-${count.index + 2}"
   }
 }
 
 # BALANCEADOR
 resource "aws_lb" "alb" {
-  name               = "isc-obligatorio-alb"
+  name               = "${var.nombre_proyecto}-alb"
   internal           = false
   load_balancer_type = "application"
   subnets            = var.public_subnets
   security_groups    = [var.alb_sg_id]
+
 }
 
 # GRUPO DE DESTINOS
 resource "aws_lb_target_group" "web" {
-  name        = "isc-obligatorio-web"
+  name        = "${var.nombre_proyecto}-web"
   port        = 30080
   protocol    = "HTTP"
   vpc_id      = var.vpc_id

@@ -1,7 +1,11 @@
+# SISTEMA DE ARCHIVOS EFS
 output "efs_id" {
-  value = aws_efs_file_system.redis.id
+  description = "Identificador del sistema de archivos EFS."
+  value       = aws_efs_file_system.redis.id
 }
 
+# BUCKET S3 CREADO POR desplegar.ps1 MEDIANTE AWS CLI
 output "etcd_bucket" {
-  value = "isc-obligatorio-etcd-${data.aws_caller_identity.current.account_id}"
+  description = "Nombre calculado del bucket de snapshots de etcd."
+  value       = "${var.nombre_proyecto}-etcd-${data.aws_caller_identity.current.account_id}"
 }

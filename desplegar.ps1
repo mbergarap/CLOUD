@@ -67,20 +67,40 @@ Etapa 'Configuracion' {
             throw "Falta instalar $programa"
         }
     }
-    $config = Import-PowerShellDataFile (Join-Path $raiz 'config.psd1')
+    $cuenta = EjecutarAws @('sts','get-caller-identity','--query','Account','--output','text')
+    if ($cuenta -notmatch '^\d{12}$') { throw 'Credenciales AWS invalidas' }
+    $archivoConfig = Join-Path $raiz 'config.psd1'
+    $config = @{}
+    if (Test-Path $archivoConfig) {
+        $config = Import-PowerShellDataFile $archivoConfig
+    }
     $script:mail = [string]$config.alerta_mail
+    if ([string]::IsNullOrWhiteSpace($mail) -or $mail -eq 'correo@ejemplo.com') {
+        $script:mail = Read-Host 'Correo obligatorio de alertas SNS'
+    }
+    if ($mail -notmatch '^[^\s@]+@[^\s@]+\.[^\s@]+$') {
+        throw 'Correo SNS invalido'
+    }
     $script:bucket = [string]$config.nombre_bucket
-    if ($mail -notmatch '^[^\s@]+@[^\s@]+\.[^\s@]+$' -or $mail -eq 'correo@ejemplo.com') {
-        throw 'Configurar alerta_mail'
+    if ([string]::IsNullOrWhiteSpace($bucket) -or $bucket -eq 'nombre-unico-del-bucket') {
+        $script:bucket = "isc-obligatorio-tfstate-$cuenta"
     }
     if ($bucket -notmatch '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$' -or
-        $bucket -match '(\.\.|\.-|-\.)|^\d+\.\d+\.\d+\.\d+$' -or
-        $bucket -eq 'nombre-unico-del-bucket') { throw 'Nombre de bucket invalido' }
+        $bucket -match '(\.\.|\.-|-\.)|^\d+\.\d+\.\d+\.\d+$') {
+        throw 'Nombre del bucket backend invalido'
+    }
+    $script:sshCidr = Read-Host 'Tu IP publica autorizada para SSH (formato X.X.X.X/32; SSH permanece cerrado y se usa SSM)'
+    $partes = $sshCidr -split '/'
+    $ipValida = $false
+    if ($partes.Count -eq 2 -and $partes[1] -eq '32') {
+        $ip = $null
+        $ipValida = [System.Net.IPAddress]::TryParse($partes[0], [ref]$ip) -and
+            $ip.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork
+    }
+    if (-not $ipValida) { throw 'IP autorizada invalida: usar IPv4/32' }
     $env:TF_VAR_alerta_mail = $mail
     $env:AWS_DEFAULT_REGION = $region
-    if ((EjecutarAws @('sts','get-caller-identity','--query','Account','--output','text')) -notmatch '^\d{12}$') {
-        throw 'Credenciales AWS invalidas'
-    }
+
 }
 
 Etapa 'Backend S3' {
@@ -105,45 +125,36 @@ Etapa 'Backend S3' {
 Etapa 'Bucket etcd S3' {
     $cuenta = EjecutarAws @('sts','get-caller-identity','--query','Account','--output','text')
     $etcdBucket = "isc-obligatorio-etcd-$cuenta"
-
-    $existe = $false
-    & aws s3api head-bucket --bucket $etcdBucket --region $region 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { $existe = $true }
-
-    if (-not $existe) {
+    $todos = EjecutarAws @('s3api','list-buckets','--query','Buckets[].Name','--output','text')
+    if (@($todos -split '\s+') -notcontains $etcdBucket) {
         EjecutarAws @('s3api','create-bucket','--bucket',$etcdBucket,'--region',$region) | Out-Null
     }
-
     EjecutarAws @('s3api','put-public-access-block','--bucket',$etcdBucket,
         '--public-access-block-configuration',
         'BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true') | Out-Null
-
     $cifrado = JsonTemporal @{
-        Rules = @(@{ ApplyServerSideEncryptionByDefault = @{ SSEAlgorithm = 'AES256' } })
+        Rules = @(@{ApplyServerSideEncryptionByDefault = @{SSEAlgorithm = 'AES256'}})
     }
     $retencion = JsonTemporal @{
-        Rules = @(@{
-            ID = 'retencion-etcd'
-            Status = 'Enabled'
-            Filter = @{ Prefix = 'snapshots/' }
-            Expiration = @{ Days = 7 }
-        })
+        Rules = @(@{ID='retencion-etcd';Status='Enabled';Filter=@{Prefix='snapshots/'};Expiration=@{Days=7}})
     }
     try {
         EjecutarAws @('s3api','put-bucket-encryption','--bucket',$etcdBucket,
-            '--server-side-encryption-configuration',("file://" + ($cifrado -replace '\\','/'))) | Out-Null
+            '--server-side-encryption-configuration',('file://' + ($cifrado -replace '\\','/'))) | Out-Null
         EjecutarAws @('s3api','put-bucket-lifecycle-configuration','--bucket',$etcdBucket,
-            '--lifecycle-configuration',("file://" + ($retencion -replace '\\','/'))) | Out-Null
+            '--lifecycle-configuration',('file://' + ($retencion -replace '\\','/'))) | Out-Null
     } finally {
         Remove-Item $cifrado,$retencion -ErrorAction SilentlyContinue
     }
 }
+
 Etapa 'Terraform' {
     Push-Location $tf
     try {
         Tf @('init','-reconfigure',"-backend-config=bucket=$bucket",
             '-backend-config=key=infra/terraform.tfstate',"-backend-config=region=$region",'-input=false')
         Tf @('validate')
+
         Tf @('plan','-out=despliegue.tfplan','-input=false')
         $plan = (& terraform show -json despliegue.tfplan | Out-String) | ConvertFrom-Json
         if ($LASTEXITCODE -ne 0) { throw 'No se pudo leer el plan Terraform' }
@@ -209,6 +220,18 @@ Etapa 'K3s' {
     if ($estado -notmatch 'Ready') { throw 'Los nodos K3s no estan Ready' }
 }
 
+Etapa 'Verificacion snapshots etcd' {
+    $resultado = Ssm $instancias[0] @(
+        'set -eu',
+        'k3s etcd-snapshot save --name isc-validacion',
+        'if /usr/local/sbin/isc-etcd-s3-sync.sh; then echo SNAPSHOT_S3_OK; else echo AVISO_SNAPSHOT_S3_NO_DISPONIBLE; fi'
+    )
+    Write-Host $resultado
+    if ($resultado -notmatch 'SNAPSHOT_S3_OK') {
+        Write-Warning 'K3s funciona, pero no se verifico la copia S3. Revisar permisos del LabRole.'
+    }
+}
+
 Etapa 'Online Boutique' {
     $yaml = [IO.File]::ReadAllText((Join-Path $raiz 'kubernetes/app.yaml'))
     $memoria = New-Object IO.MemoryStream
@@ -236,7 +259,8 @@ Etapa 'Redis y EFS' {
         'kubectl exec deploy/redis-cart -- redis-cli ping | grep PONG',
         'kubectl exec deploy/redis-cart -- redis-cli CONFIG GET appendonly | grep -A1 appendonly | grep yes',
         'kubectl get pv redis-efs',
-        'kubectl get hpa frontend'
+        'kubectl get hpa',
+        'kubectl get pdb'
     ) | Out-Host
 }
 
@@ -248,9 +272,15 @@ Etapa 'Monitoreo y backups' {
     $suscripciones = EjecutarAws @('sns','list-subscriptions','--region',$region,
         '--query','Subscriptions[].Endpoint','--output','text')
     if (@($planes -split '\s+') -notcontains 'isc-obligatorio-redis') { throw 'Falta AWS Backup' }
-    if (@($alarmas -split '\s+' | Where-Object { $_ -match '^isc-obligatorio-' }).Count -lt 4) {
-        throw 'Faltan alarmas CloudWatch'
+    if (@($alarmas -split '\s+' | Where-Object { $_ -match '^isc-obligatorio-' }).Count -lt 17) {
+        throw 'Faltan alarmas CloudWatch (se esperan 17)'
     }
+    $grupoLogs = EjecutarAws @('logs','describe-log-groups','--region',$region,
+        '--log-group-name-prefix','/isc-obligatorio/k3s','--query','logGroups[].logGroupName','--output','text')
+    if (@($grupoLogs -split '\s+') -notcontains '/isc-obligatorio/k3s') { throw 'Falta el grupo de CloudWatch Logs' }
+    $panel = EjecutarAws @('cloudwatch','list-dashboards','--region',$region,
+        '--dashboard-name-prefix','isc-obligatorio-panel','--query','DashboardEntries[].DashboardName','--output','text')
+    if (@($panel -split '\s+') -notcontains 'isc-obligatorio-panel') { throw 'Falta el dashboard de CloudWatch' }
     if (@($suscripciones -split '\s+') -notcontains $mail) { throw 'Falta suscripcion SNS' }
 }
 

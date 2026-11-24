@@ -1,11 +1,11 @@
 
 # ALMACENAMIENTO EFS
 resource "aws_efs_file_system" "redis" {
-  creation_token   = "isc-obligatorio-redis"
+  creation_token   = "${var.nombre_proyecto}-redis"
   encrypted        = true
   performance_mode = "generalPurpose"
   throughput_mode  = "bursting"
-  tags             = { Name = "isc-obligatorio-redis" }
+  tags             = { Name = "${var.nombre_proyecto}-redis" }
 }
 
 # PUNTOS DE MONTAJE
@@ -23,11 +23,11 @@ data "aws_iam_role" "backup" {
 
 # RESPALDOS AUTOMATICOS
 resource "aws_backup_vault" "redis" {
-  name = "isc-obligatorio-redis"
+  name = "${var.nombre_proyecto}-redis"
 }
 
 resource "aws_backup_plan" "redis" {
-  name = "isc-obligatorio-redis"
+  name = "${var.nombre_proyecto}-redis"
 
   rule {
     rule_name         = "respaldo-diario"
@@ -43,7 +43,7 @@ resource "aws_backup_plan" "redis" {
 }
 
 resource "aws_backup_selection" "redis" {
-  name         = "isc-obligatorio-redis"
+  name         = "${var.nombre_proyecto}-redis"
   iam_role_arn = data.aws_iam_role.backup.arn
   plan_id      = aws_backup_plan.redis.id
   resources    = [aws_efs_file_system.redis.arn]

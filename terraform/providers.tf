@@ -15,6 +15,16 @@ terraform {
 }
 
 # PROVEEDOR AWS
+# default_tags etiqueta todos los recursos que lo soportan.
 provider "aws" {
-  region = "us-east-1"
+  region = var.region
+
+  default_tags {
+    tags = {
+      Proyecto = var.nombre_proyecto
+      Gestion  = "terraform"
+      Materia  = "Implementacion de Soluciones Cloud"
+      Ambiente = "obligatorio"
+    }
+  }
 }
