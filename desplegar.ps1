@@ -228,6 +228,18 @@ Etapa 'K3s' {
     if ($estado -notmatch 'Ready') { throw 'Los nodos K3s no estan Ready' }
 }
 
+Etapa 'Zonas K3s' {
+    foreach ($id in $instancias) {
+        Ssm $id @(
+            'set -eu',
+            'TOKEN=$(curl -fsS -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 60" http://169.254.169.254/latest/api/token)',
+            'AZ=$(curl -fsS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)',
+            'REGION=$(curl -fsS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)',
+            'test -n "$AZ" && test -n "$REGION"',
+            'kubectl label node "$(hostname -f)" "topology.kubernetes.io/zone=$AZ" "topology.kubernetes.io/region=$REGION" --overwrite'
+        ) | Out-Host
+    }
+}
 Etapa 'Verificacion snapshots etcd' {
     $resultado = Ssm $instancias[0] @(
         'set -eu',
@@ -260,6 +272,30 @@ Etapa 'Online Boutique' {
     ) | Out-Host
 }
 
+Etapa 'Distribucion por AZ' {
+    Ssm $instancias[0] @(
+        'set -eu',
+        'for d in adservice cartservice checkoutservice currencyservice emailservice frontend paymentservice productcatalogservice recommendationservice shippingservice; do',
+        '  kubectl rollout status deployment/"$d" --timeout=180s',
+        '  deseadas=$(kubectl get deployment "$d" -o jsonpath="{.spec.replicas}")',
+        '  listas=$(kubectl get deployment "$d" -o jsonpath="{.status.readyReplicas}")',
+        '  test "$deseadas" -ge 2 && test "$deseadas" -le 4 || { echo "ERROR: $d replicas fuera de rango"; exit 1; }',
+        '  test "$listas" = "$deseadas" || { echo "ERROR: $d tiene $listas/$deseadas replicas listas"; exit 1; }',
+        '  nodes=$(kubectl get pods -l "app=$d" -o custom-columns="READY:.status.containerStatuses[0].ready,NODE:.spec.nodeName" --no-headers | awk ''$1=="true" {print $2}'')',
+        '  count=$(printf "%s\n" "$nodes" | sed "/^$/d" | wc -l)',
+        '  test "$count" -eq "$deseadas" || { echo "ERROR: $d tiene $count pods listos"; exit 1; }',
+        '  zones=""',
+        '  for node in $nodes; do',
+        '    zone=$(kubectl get node "$node" -o jsonpath="{.metadata.labels.topology\.kubernetes\.io/zone}")',
+        '    test -n "$zone" && test "$zone" != "<none>" || { echo "ERROR: nodo $node sin zona AWS"; exit 1; }',
+        '    zones="$zones $zone"',
+        '  done',
+        '  distintas=$(printf "%s\n" $zones | sort -u | wc -l)',
+        '  test "$distintas" -ge 2 || { echo "ERROR: $d no esta distribuido entre zonas"; exit 1; }',
+        '  echo "$d OK: $listas/$deseadas replicas, $distintas zonas"',
+        'done'
+    ) | Out-Host
+}
 Etapa 'Redis y EFS' {
     Ssm $instancias[0] @(
         'set -eu',
