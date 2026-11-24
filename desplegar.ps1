@@ -102,6 +102,42 @@ Etapa 'Backend S3' {
     } finally { Remove-Item $archivo -ErrorAction SilentlyContinue }
 }
 
+Etapa 'Bucket etcd S3' {
+    $cuenta = EjecutarAws @('sts','get-caller-identity','--query','Account','--output','text')
+    $etcdBucket = "isc-obligatorio-etcd-$cuenta"
+
+    $existe = $false
+    & aws s3api head-bucket --bucket $etcdBucket --region $region 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) { $existe = $true }
+
+    if (-not $existe) {
+        EjecutarAws @('s3api','create-bucket','--bucket',$etcdBucket,'--region',$region) | Out-Null
+    }
+
+    EjecutarAws @('s3api','put-public-access-block','--bucket',$etcdBucket,
+        '--public-access-block-configuration',
+        'BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true') | Out-Null
+
+    $cifrado = JsonTemporal @{
+        Rules = @(@{ ApplyServerSideEncryptionByDefault = @{ SSEAlgorithm = 'AES256' } })
+    }
+    $retencion = JsonTemporal @{
+        Rules = @(@{
+            ID = 'retencion-etcd'
+            Status = 'Enabled'
+            Filter = @{ Prefix = 'snapshots/' }
+            Expiration = @{ Days = 7 }
+        })
+    }
+    try {
+        EjecutarAws @('s3api','put-bucket-encryption','--bucket',$etcdBucket,
+            '--server-side-encryption-configuration',("file://" + ($cifrado -replace '\\','/'))) | Out-Null
+        EjecutarAws @('s3api','put-bucket-lifecycle-configuration','--bucket',$etcdBucket,
+            '--lifecycle-configuration',("file://" + ($retencion -replace '\\','/'))) | Out-Null
+    } finally {
+        Remove-Item $cifrado,$retencion -ErrorAction SilentlyContinue
+    }
+}
 Etapa 'Terraform' {
     Push-Location $tf
     try {

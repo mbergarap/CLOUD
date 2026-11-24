@@ -2,38 +2,70 @@
 
 ## Objetivo
 
-Desplegar **Online Boutique** en AWS con Kubernetes K3s, balanceo de carga, tolerancia a fallas del plano de control, escalabilidad de frontend, almacenamiento persistente de Redis, respaldos y monitoreo. El proyecto se basa en la consigna **ISC-N5A – agosto 2026** y utiliza imágenes públicas oficiales de Online Boutique **v0.10.7**. La aplicación es de demostración: no procesa pagos reales.
+Desplegar **Online Boutique** en AWS mediante Kubernetes K3s, balanceo de carga, tolerancia a fallas del plano de control, escalabilidad del frontend, almacenamiento persistente de Redis, respaldos y monitoreo.
 
-> **Estado de entrega:** código preparado para prueba, **NO validado en una cuenta AWS Academy**. No se deben afirmar los 45 puntos ni la disponibilidad real antes de ejecutar y documentar las pruebas. La creación de roles IAM, NAT, EFS y AWS Backup puede estar limitada por permisos y cuotas del laboratorio.
+El proyecto se basa en la consigna **ISC-N5A – agosto 2026** y utiliza imágenes públicas oficiales de **Online Boutique v0.10.7**. La aplicación es demostrativa y no procesa pagos reales.
+
+**Estado:** se completó satisfactoriamente un despliegue automatizado desde una cuenta AWS Academy reiniciada el 23/11/2026, con tres nodos K3s Ready, microservicios disponibles y respuesta HTTP 200 del balanceador. Las mejoras posteriores, especialmente el respaldo de etcd a S3, requieren una nueva validación.
 
 ## Arquitectura
 
-- **VPC:** `10.80.0.0/16`, región `us-east-1`.
-- **Tres AZ:** seleccionadas automáticamente entre las disponibles de la cuenta.
-- **Seis subredes:** 3 públicas (`10.80.1.0/24` a `10.80.3.0/24`) y 3 privadas (`10.80.10.0/24`, `10.80.20.0/24`, `10.80.30.0/24`).
-- **Internet Gateway y 3 NAT Gateway:** cada privada utiliza el NAT de su AZ. Los NAT consumen créditos mientras existan.
-- **Tres EC2 `t3.medium`:** Amazon Linux 2023, 40 GiB gp3 cifrado, sin IP pública, administradas mediante SSM.
-- **K3s:** tres servidores con etcd embebido, sin trabajadores dedicados. Dos miembros disponibles mantienen quórum si falla uno; esto no garantiza alta disponibilidad de todos los microservicios.
-- **ALB público:** listener HTTP 80 y Target Group con NodePort 30080 en K3s. HTTP se usa solo con datos ficticios de laboratorio.
-- **Redis:** un pod con AOF y volumen persistente NFS en EFS; recuperación mediante reprogramación del pod, con interrupción temporal. Los puntos de montaje EFS están en las tres AZ.
-- **AWS Backup:** plan diario 03:00 UTC, retención 7 días y un vault.
-- **CloudWatch:** tres alarmas de CPU EC2 y una de targets no saludables; SNS envía avisos por correo previa confirmación de suscripción.
-- **HPA:** `frontend` de 2 a 4 réplicas con CPU objetivo del 60 %. Escala **pods**, no EC2. Requiere comprobar capacidad real.
+- **Región:** `us-east-1`.
+- **VPC:** `10.80.0.0/16`.
+- **Zonas de disponibilidad:** tres AZ seleccionadas automáticamente por Terraform.
+- **Subredes públicas:** `10.80.1.0/24`, `10.80.2.0/24` y `10.80.3.0/24`.
+- **Subredes privadas:** `10.80.10.0/24`, `10.80.20.0/24` y `10.80.30.0/24`.
+- **Internet Gateway:** proporciona salida y entrada de Internet mediante las rutas públicas.
+- **NAT Gateways:** tres, uno por AZ, para la salida a Internet de las subredes privadas.
+- **EC2:** tres instancias privadas `t3.medium`, sin dirección IP pública.
+- **K3s:** tres servidores con etcd embebido y quórum distribuido.
+- **Application Load Balancer:** público, listener HTTP 80 y Target Group en TCP 30080.
+- **Online Boutique:** microservicios desplegados mediante manifiestos Kubernetes.
+- **Redis:** ejecutado como pod Kubernetes, con persistencia AOF mediante Amazon EFS.
+- **Amazon EFS:** tres puntos de montaje, uno por AZ.
+- **AWS Backup:** plan de respaldo diario para EFS.
+- **Amazon S3:** backend remoto de Terraform y bucket independiente para snapshots de etcd.
+- **CloudWatch y SNS:** alarmas de infraestructura y notificaciones por correo.
+- **HPA:** escalado del frontend de 2 a 4 réplicas, con CPU objetivo del 60 %.
 
-El diagrama está en [`docs/arquitectura.drawio`](docs/arquitectura.drawio) y una imagen en [`docs/arquitectura.png`](docs/arquitectura.png).
+El plano de control tolera la pérdida de un miembro de etcd mientras permanezcan dos miembros disponibles. Esto no garantiza que todos los microservicios permanezcan disponibles durante cualquier falla.
+
+El diagrama editable se encuentra en [`docs/arquitectura.drawio`](docs/arquitectura.drawio), con su representación PNG en [`docs/arquitectura.png`](docs/arquitectura.png).
+
+## Infraestructura y versiones
+
+| Componente                 | Tipo o versión            | Configuración                                     |
+| -------------------------- | ------------------------- | ------------------------------------------------- |
+| Región AWS                 | `us-east-1`               | Norte de Virginia                                 |
+| Servidores EC2             | `t3.medium`               | 3 instancias, 2 vCPU y 4 GiB RAM cada una         |
+| Sistema operativo          | Amazon Linux 2023         | Última AMI coincidente al desplegar               |
+| Disco EC2                  | EBS `gp3`                 | 40 GiB cifrados por instancia                     |
+| Kubernetes                 | K3s                       | Tres servidores con etcd embebido                 |
+| K3s probado                | `v1.37.2+k3s1`            | Versión observada en el despliegue del 23/11/2026 |
+| Aplicación                 | Online Boutique `v0.10.7` | Imágenes públicas                                 |
+| Terraform                  | `>= 1.5`                  | Infraestructura como código                       |
+| Proveedor Terraform AWS    | Serie `5.x`               | Versión exacta fijada en `.terraform.lock.hcl`    |
+| Proveedor Terraform Random | Serie `3.x`               | Generación del token K3s                          |
+| Balanceador                | Application Load Balancer | HTTP 80 → NodePort 30080                          |
+| Almacenamiento             | Amazon EFS                | Redis persistente mediante NFS                    |
+| Sistema de monitoreo       | Amazon CloudWatch         | Alarmas de EC2 y ALB                              |
+
+La versión exacta de K3s no está fijada en las plantillas de instalación: el instalador descarga la versión disponible al ejecutarse. Para garantizar reproducibilidad estricta se debería fijar explícitamente una versión y probarla.
 
 ## Requisitos
 
 1. Windows PowerShell 5.1 o PowerShell 7.
-2. AWS CLI v2 con credenciales vigentes y región `us-east-1` disponible.
-3. Terraform >= 1.5, compatible con proveedor AWS 5.x y Random 3.x.
-4. Cuenta AWS Academy **limpia** o con **el estado S3 previamente creado por este proyecto**; no reutilizar recursos ajenos al estado.
-5. Cuota suficiente para tres EC2 `t3.medium`, tres NAT Gateway y Elastic IP, ALB, EFS, AWS Backup, SNS y roles IAM. Las restricciones de AWS Academy no se pueden verificar sin iniciar sesión.
-6. Internet en la PC para descargar proveedores de Terraform y en las EC2 privadas mediante los NAT para descargar K3s e imágenes.
+2. AWS CLI v2 instalado y configurado con credenciales vigentes.
+3. Terraform compatible con los proveedores del proyecto.
+4. Cuenta AWS Academy limpia, o infraestructura previa administrada por el estado remoto del mismo proyecto.
+5. Cuotas y permisos suficientes para EC2, NAT Gateway, ALB, EFS, S3, AWS Backup, CloudWatch y SNS.
+6. Conectividad a Internet para descargar Terraform, K3s y las imágenes de los contenedores.
 
-## Configuración (único archivo editable)
+## Configuración
 
-Antes de desplegar, abrir `config.psd1` y sustituir **ambos** ejemplos:
+El archivo privado `config.psd1` debe crearse a partir de `config.example.psd1`.
+
+Ejemplo:
 
 ```powershell
 @{
@@ -42,87 +74,181 @@ Antes de desplegar, abrir `config.psd1` y sustituir **ambos** ejemplos:
 }
 ```
 
-- `alerta_mail`: correo real al que llegarán notificaciones SNS.
-- `nombre_bucket`: nombre S3 globalmente único, con letras minúsculas, números y guiones (p. ej. `isc-estado-equipo-2026-12345`). Si ya está usado por otra cuenta, elegir otro nombre.
-- No colocar credenciales en el archivo, no modificar nombres de recursos para efectuar un despliegue sobre un estado ya creado.
-- Este archivo **se incluye en GitHub solamente con los valores de ejemplo**. No subir correos personales ni datos privados por error.
+- `alerta_mail`: dirección que recibirá las notificaciones SNS.
+- `nombre_bucket`: nombre globalmente único del bucket S3 para el backend Terraform.
 
-## Validar y desplegar
+**No publicar `config.psd1` ni credenciales AWS.** El repositorio versiona únicamente `config.example.psd1` con valores ficticios.
 
-Desde PowerShell, en el directorio raíz del proyecto:
+## Validación y despliegue
+
+Desde PowerShell, en la raíz del proyecto:
 
 ```powershell
 .\validar.ps1
 ```
 
-Este comando consulta AWS y ejecuta `terraform fmt`, `init -backend=false` y `validate`, sin crear recursos AWS. **Esto no demuestra** que los permisos AWS permitan crear toda la infraestructura.
+Este comando comprueba requisitos y configuración, pero no garantiza que AWS permita crear todos los recursos.
 
-Si la validación finaliza correctamente y la cuenta está destinada al obligatorio:
+Para desplegar:
 
 ```powershell
 .\desplegar.ps1
 ```
 
-El script debe crear/reutilizar el bucket remoto S3, activar cifrado AES256, versionado y bloqueo público, inicializar Terraform, evaluar el plan, aplicar cambios permitidos, configurar K3s y desplegar los manifiestos. **Bloquea cualquier plan que contenga una acción `delete`, incluso sustituciones.** No puede detectar recursos extranjeros automáticamente en todos los casos: ante un conflicto o error, no borrar ni importar recursos sin revisar el estado.
+El script automatiza:
 
-La salida correcta de cada fase es su título seguido de `OK`. Si algo falla muestra `ERROR` y la causa. Cuando termina imprime:
+1. Validación de configuración y credenciales.
+2. Creación o configuración del backend remoto S3.
+3. Inicialización, validación, planificación y aplicación de Terraform.
+4. Instalación y verificación del clúster K3s.
+5. Despliegue de Online Boutique.
+6. Validación de Redis y EFS.
+7. Verificación de monitoreo y configuración de AWS Backup.
+8. Comprobación del balanceador y respuesta HTTP 200.
 
-```text
-Podes acceder a ONLINE BOUTIQUE desde: http://DNS-DEL-ALB
-```
+El script bloquea planes Terraform que incluyan eliminaciones o reemplazos. No debe utilizarse para destruir recursos.
 
-El primer despliegue puede tardar debido a las EC2, K3s, imágenes y health checks. El script no debe considerarse exitoso si algún microservicio o una comprobación esencial falla. **Confirmar la suscripción SNS en el correo que llegue de AWS**: es el único paso manual posterior obligatorio para recibir las alertas.
+Al finalizar correctamente, muestra la dirección pública de Online Boutique.
 
-## Seguridad
+La suscripción SNS requiere confirmar el correo enviado por AWS para empezar a recibir notificaciones.
 
-- Solo el ALB recibe tráfico desde Internet en TCP/80.
-- EC2 privadas sin IP pública, puerto 22 cerrado; conectar desde EC2 > Connect > Session Manager.
-- ALB llega a K3s por TCP/30080. EFS recibe NFS/TCP/2049 solo desde el Security Group K3s. Los nodos se comunican entre sí dentro de su SG.
-- Para producción se requerirían HTTPS, segmentación de permisos Kubernetes, mecanismos adicionales de alta disponibilidad de Redis y controles de seguridad más avanzados.
-- Los tokens del clúster K3s están protegidos en el estado Terraform cifrado S3; restringir acceso al bucket.
+## Seguridad de red — Security Groups
+
+La infraestructura utiliza tres Security Groups principales: ALB, K3s y EFS.
+
+| Origen               | Destino              | Protocolo / puerto | Motivo                              |
+| -------------------- | -------------------- | ------------------ | ----------------------------------- |
+| Internet `0.0.0.0/0` | ALB                  | TCP 80             | Acceso público a Online Boutique    |
+| ALB                  | K3s                  | TCP 30080          | Tráfico del balanceador al NodePort |
+| K3s                  | K3s                  | TCP 6443           | API de Kubernetes                   |
+| K3s                  | K3s                  | TCP 2379–2380      | Comunicación etcd                   |
+| K3s                  | K3s                  | TCP 10250          | API de Kubelet                      |
+| K3s                  | K3s                  | UDP 8472           | Red Flannel VXLAN                   |
+| K3s                  | EFS                  | TCP 2049           | Persistencia mediante NFS           |
+| K3s                  | Internet `0.0.0.0/0` | TCP 443            | HTTPS y servicios AWS               |
+| K3s                  | Internet `0.0.0.0/0` | TCP 80             | Instalación y descargas HTTP        |
+| K3s                  | VPC `10.80.0.0/16`   | TCP/UDP 53         | Consultas DNS                       |
+| ALB                  | VPC `10.80.0.0/16`   | TCP 30080          | Salida hacia Kubernetes             |
+
+### Medidas de seguridad
+
+- Las EC2 se encuentran únicamente en subredes privadas.
+- Ninguna EC2 recibe una IP pública.
+- No se habilita SSH TCP 22 desde Internet.
+- La administración utiliza AWS Systems Manager mediante `LabInstanceProfile`.
+- El ALB solo expone HTTP 80.
+- El Security Group de EFS permite NFS desde K3s.
+- Los puertos internos de Kubernetes utilizan referencias al propio Security Group del clúster.
+- Los volúmenes EBS y el sistema de archivos EFS están cifrados.
+- El backend S3 utiliza cifrado, versionado y bloqueo de acceso público.
+
+Las reglas de salida se limitan a los protocolos necesarios declarados en Terraform.
+
+**Observación:** el Security Group de K3s utiliza `ignore_changes` en `ingress` y `egress`. Se deben comprobar las reglas efectivas de AWS durante la validación final. También deben revisarse los permisos de salida efectivos del Security Group de EFS.
+
+Para un entorno productivo serían necesarios HTTPS, controles IAM más específicos y endurecimiento adicional.
+
+## Respaldos y recuperación
+
+### Redis y EFS
+
+AWS Backup dispone de:
+
+- Un Backup Vault.
+- Un plan de respaldos diarios a las 03:00 UTC.
+- Retención de 7 días.
+- Asociación del sistema de archivos EFS al plan.
+
+La creación del plan se realiza mediante Terraform.
+
+**Pendiente de validación:** comprobar que se complete al menos un trabajo de backup y exista un punto de recuperación utilizable.
+
+### Kubernetes y etcd
+
+K3s utiliza etcd embebido para mantener el estado del clúster.
+
+Se incorporó una configuración de snapshots con:
+
+- Frecuencia de 12 horas.
+- Almacenamiento externo en un bucket Amazon S3 privado.
+- Cifrado del bucket y bloqueo de acceso público.
+- Eliminación de objetos después de 7 días mediante una política de ciclo de vida.
+
+**Pendiente de validación en AWS Academy:** comprobar los permisos de S3 del perfil `LabInstanceProfile`, verificar la creación de snapshots y ejecutar una prueba de recuperación.
+
+La infraestructura no implementa restauración automática de EFS ni del clúster Kubernetes.
+
+## Monitoreo
+
+El módulo CloudWatch incluye alarmas de CPU para las tres instancias EC2 y una alarma relacionada con los destinos no saludables del ALB.
+
+Amazon SNS envía las notificaciones a la dirección configurada, una vez confirmada la suscripción por correo.
 
 ## Comprobaciones para la defensa
 
-Registrar evidencia de:
+1. Terraform valida sin errores.
+2. La VPC contiene seis subredes distribuidas en tres AZ.
+3. Las subredes privadas utilizan sus respectivos NAT Gateways.
+4. Las tres EC2 están `running` y disponibles en SSM.
+5. Los tres nodos Kubernetes están `Ready`.
+6. Los microservicios de Online Boutique están disponibles.
+7. Redis responde `PONG` y tiene AOF habilitado.
+8. EFS proporciona almacenamiento persistente al pod Redis.
+9. El ALB tiene destinos saludables y responde HTTP 200.
+10. El HPA del frontend está configurado.
+11. Existen las alarmas CloudWatch y la suscripción SNS.
+12. AWS Backup tiene un plan y una selección de recursos configurados.
+13. Se verifica al menos un respaldo recuperable de EFS.
+14. Se comprueba que los snapshots de etcd lleguen a S3.
+15. Se documentan las pruebas de recuperación y cualquier limitación del laboratorio.
 
-1. `terraform validate` sin errores y plan inicial solo `create`.
-2. VPC, 6 subredes y rutas privadas a 3 NAT.
-3. 3 EC2 `running`, `SSM Online`, `kubectl get nodes` con 3 nodos `Ready`.
-4. `kubectl get deployments,pods,svc,hpa,pvc,pv` sin microservicios indisponibles, y HPA configurado.
-5. ALB con al menos 2 targets saludables y navegación de catálogo/carrito/checkout de prueba.
-6. EFS con mount targets, `redis-cli CONFIG GET appendonly` activo; comprobar persistencia tras reinicio controlado de pod.
-7. Plan AWS Backup con cron diario y `delete_after=7`. **Verificar que exista al menos un punto de recuperación** antes de afirmar que los datos ya están respaldados; el primer backup no se completa instantáneamente.
-8. CPU y targets alarmados en CloudWatch; recepción SNS solo después de confirmar el correo.
-9. Escalado HPA con una carga **controlada**, monitorizando CPU y capacidad de las instancias. Con tres EC2 fijas no se puede prometer capacidad ilimitada.
-10. Simulación de caída de un nodo con cuidado, verificando etcd, distribución de pods y recuperación de Redis; puede producir interrupciones temporales.
+Los puntos 13 a 15 aún requieren evidencia de ejecución.
 
-## Recuperación y costos
+## Costos y eliminación de recursos
 
-AWS Backup permite restaurar EFS a un sistema de archivos separado, pero **este proyecto no implementa restauración automática**. La demostración de restauración debe documentarse antes de la defensa. No lanzar pruebas destructivas con datos que quieras conservar.
+Los tres NAT Gateways, las tres instancias EC2, el ALB, EFS y el resto de servicios pueden consumir créditos AWS Academy mientras estén desplegados.
 
-Los **tres NAT Gateway, tres EC2 y el ALB** generan costos/créditos; apagarlos individualmente puede romper el laboratorio. Para eliminar toda la infraestructura de prueba hay que revisar el estado y ejecutar un procedimiento destructivo **separado y aprobado explícitamente**; `desplegar.ps1` nunca destruye recursos.
+El laboratorio debe utilizarse considerando su presupuesto y las restricciones de permisos.
 
-## Archivos
+La eliminación de infraestructura debe realizarse mediante un procedimiento separado, revisado y autorizado. `desplegar.ps1` no ejecuta destrucciones automáticas.
 
-- `config.psd1`: correo y bucket.
-- `validar.ps1`: requisitos y validación estática.
-- `desplegar.ps1`: flujo de despliegue y comprobaciones por SSM.
-- `terraform/`: `main.tf`, `variables.tf`, `outputs.tf`, `providers.tf`, y cinco módulos.
-- `kubernetes/app.yaml`: once deployments (10 servicios + Redis), servicios, HPA, PV y PVC.
-- `docs/arquitectura.drawio`: editable en diagrams.net; `docs/arquitectura.png`: vista previa.
-- `aplicacion-original.zip`: copia del material suministrado para trazabilidad; el despliegue **no compila** su código.
+## Estructura del proyecto
+
+| Archivo o carpeta               | Función                                      |
+| ------------------------------- | -------------------------------------------- |
+| `README.md`                     | Documentación del obligatorio                |
+| `config.example.psd1`           | Ejemplo de configuración                     |
+| `config.psd1`                   | Configuración local privada, excluida de Git |
+| `desplegar.ps1`                 | Despliegue automatizado                      |
+| `validar.ps1`                   | Validaciones previas                         |
+| `terraform/`                    | Infraestructura Terraform                    |
+| `terraform/modules/network/`    | VPC, subredes, Internet Gateway y NAT        |
+| `terraform/modules/security/`   | Security Groups                              |
+| `terraform/modules/compute/`    | EC2, K3s y ALB                               |
+| `terraform/modules/storage/`    | EFS, AWS Backup y S3 de etcd                 |
+| `terraform/modules/monitoring/` | CloudWatch y SNS                             |
+| `kubernetes/app.yaml`           | Manifiestos de Online Boutique               |
+| `docs/arquitectura.drawio`      | Diagrama editable                            |
+| `docs/arquitectura.png`         | Diagrama exportado                           |
 
 ## Trabajo colaborativo y entrega
 
-Crear branches de trabajo reales, commits descriptivos y pull requests revisados por los integrantes. No inventar historial. La consigna pide documentar el uso de IA y verificar la autoría y la comprensión técnica. En Gestión ORT se entrega un ZIP/RAR (máximo 40 MB) y un PDF con la URL del repositorio Git, con el contenido exigido por la consigna. Preparar la defensa presencial o remota según lo comunique el docente.
+El repositorio Git conserva el código y la documentación del proyecto.
 
-## Uso de IA
+Las modificaciones deben registrarse mediante commits descriptivos. La entrega académica debe ajustarse a los archivos, formatos y requisitos establecidos en la consigna de ORT.
 
-Se utilizó ChatGPT de OpenAI para apoyar el diseño de arquitectura, redactar Terraform, PowerShell, manifiestos y documentación, y revisar la consistencia. El equipo es responsable de validar en AWS, documentar las pruebas, comprender el código y corregir posibles problemas antes de la entrega. No afirmar que los resultados han sido comprobados en AWS hasta ejecutarlos efectivamente.
+La validación de la infraestructura, la comprensión de los componentes y la defensa del trabajo son responsabilidad del equipo.
+
+## Uso de inteligencia artificial
+
+Se utilizó **ChatGPT de OpenAI** como herramienta de apoyo en el diseño de la arquitectura, la elaboración y revisión de Terraform, los scripts PowerShell, los manifiestos Kubernetes y la documentación técnica.
+
+Los resultados generados o revisados con asistencia de IA fueron evaluados por el equipo. La responsabilidad por el funcionamiento, las pruebas, las decisiones de arquitectura y la entrega corresponde a sus integrantes.
 
 ## Fuentes
 
-- Consigna ORT «ISC-N5A Obligatorio – Agosto 2026», material suministrado por el equipo.
-- Aplicación Online Boutique suministrada en `Obligatorio-Microservicios-build-modernize-runtimes-eks.zip` (incluida como `aplicacion-original.zip`).
-- GoogleCloudPlatform/microservices-demo, manifiestos oficiales de la versión v0.10.7: <https://github.com/GoogleCloudPlatform/microservices-demo/blob/main/release/kubernetes-manifests.yaml>.
-- Documentación AWS: EC2, SSM, ALB, EFS, AWS Backup, IAM y CloudWatch.
+- Consigna ORT: *ISC-N5A – Obligatorio, agosto 2026*.
+- Proyecto Google Online Boutique: [https://github.com/GoogleCloudPlatform/microservices-demo](https://github.com/GoogleCloudPlatform/microservices-demo)
+- Documentación de K3s: [https://docs.k3s.io/](https://docs.k3s.io/)
+- Documentación de Terraform: [https://developer.hashicorp.com/terraform/docs](https://developer.hashicorp.com/terraform/docs)
+  - Documentación oficial de AWS: [https://docs.aws.amazon.com/](https://docs.aws.amazon.com/)

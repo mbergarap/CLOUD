@@ -48,3 +48,5 @@ resource "aws_backup_selection" "redis" {
   plan_id      = aws_backup_plan.redis.id
   resources    = [aws_efs_file_system.redis.arn]
 }
+
+data "aws_caller_identity" "current" {}

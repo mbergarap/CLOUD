@@ -35,7 +35,8 @@ resource "aws_instance" "primary" {
   iam_instance_profile        = "LabInstanceProfile"
 
   user_data = templatefile("${path.module}/primary.sh.tftpl", {
-    token = random_password.k3s_token.result
+    token       = random_password.k3s_token.result
+    etcd_bucket = var.etcd_bucket
   })
 
   metadata_options {
@@ -68,8 +69,9 @@ resource "aws_instance" "secondary" {
   iam_instance_profile        = "LabInstanceProfile"
 
   user_data = templatefile("${path.module}/secondary.sh.tftpl", {
-    token     = random_password.k3s_token.result
-    server_ip = aws_instance.primary.private_ip
+    token       = random_password.k3s_token.result
+    server_ip   = aws_instance.primary.private_ip
+    etcd_bucket = var.etcd_bucket
   })
 
   metadata_options {

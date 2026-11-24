@@ -1,7 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 exec > >(tee /var/log/isc-k3s-install.log | logger -t isc-k3s -s 2>/dev/console) 2>&1
+
 dnf install -y nfs-utils
 command -v curl >/dev/null
-curl -fsSL https://get.k3s.io | INSTALL_K3S_EXEC='server --cluster-init --disable traefik --disable servicelb --write-kubeconfig-mode 600' K3S_TOKEN='${token}' sh -
+
+curl -fsSL https://get.k3s.io | \
+  INSTALL_K3S_EXEC='server --cluster-init --disable traefik --disable servicelb --write-kubeconfig-mode 600 --etcd-snapshot-schedule-cron "0 */12 * * *" --etcd-s3 --etcd-s3-bucket ${etcd_bucket} --etcd-s3-region us-east-1 --etcd-s3-folder snapshots --etcd-s3-retention 42' \
+  K3S_TOKEN='${token}' sh -
+
 systemctl is-active --quiet k3s

@@ -17,6 +17,7 @@ module "storage" {
 }
 
 # COMPUTO
+# COMPUTO
 module "compute" {
   source          = "./modules/compute"
   public_subnets  = module.network.public_subnets
@@ -24,10 +25,11 @@ module "compute" {
   k3s_sg_id       = module.security.k3s_sg_id
   alb_sg_id       = module.security.alb_sg_id
   vpc_id          = module.network.vpc_id
+  etcd_bucket     = module.storage.etcd_bucket
+
   # La ruta NAT y EFS deben existir antes de arrancar los servidores.
   depends_on = [module.network, module.storage]
 }
-
 # MONITOREO
 module "monitoring" {
   source              = "./modules/monitoring"

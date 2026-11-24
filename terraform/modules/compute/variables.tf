@@ -8,3 +8,7 @@ variable "k3s_sg_id" { type = string }
 variable "alb_sg_id" { type = string }
 # VPC
 variable "vpc_id" { type = string }
+# BUCKET DE RESPALDOS ETCD
+variable "etcd_bucket" {
+  type = string
+}
