@@ -1,8 +1,5 @@
-# Todas las reglas se declaran como recursos independientes
-# (aws_vpc_security_group_*_rule). Los Security Groups no llevan reglas en linea,
-# por lo que Terraform administra y corrige cualquier cambio manual (sin ignore_changes).
 
-# ---------------------------------------------------------------- BALANCEADOR
+#  BALANCEADOR
 resource "aws_security_group" "alb" {
   name_prefix = "${var.nombre_proyecto}-alb-"
   description = "HTTP publico al ALB"
@@ -29,7 +26,7 @@ resource "aws_vpc_security_group_egress_rule" "alb_a_k3s" {
   referenced_security_group_id = aws_security_group.k3s.id
 }
 
-# ---------------------------------------------------------------- KUBERNETES
+#  KUBERNETES
 resource "aws_security_group" "k3s" {
   name_prefix = "${var.nombre_proyecto}-k3s-"
   description = "Servidores K3s privados"
@@ -121,7 +118,7 @@ resource "aws_vpc_security_group_egress_rule" "k3s_nfs" {
   referenced_security_group_id = aws_security_group.efs.id
 }
 
-# ---------------------------------------------------------------- EFS
+#  EFS
 resource "aws_security_group" "efs" {
   name_prefix = "${var.nombre_proyecto}-efs-"
   description = "NFS desde K3s"
@@ -137,5 +134,4 @@ resource "aws_vpc_security_group_ingress_rule" "efs_nfs" {
   to_port                      = 2049
   referenced_security_group_id = aws_security_group.k3s.id
 }
-# EFS no declara reglas de salida: las respuestas NFS viajan por la conexion
-# ya establecida (Security Groups con estado), por lo que no necesita egress.
+

@@ -5,6 +5,11 @@ $raiz = $PSScriptRoot
 $region = 'us-east-1'
 $tf = Join-Path $raiz 'terraform'
 
+# Quita la marca de archivo descargado de los scripts del repositorio, para que
+# PowerShell no pida confirmacion al ejecutarlos.
+Get-ChildItem -Path $raiz -Recurse -File -Include '*.ps1','*.psd1' -ErrorAction SilentlyContinue |
+    Unblock-File -ErrorAction SilentlyContinue
+
 function EjecutarAws($argsList) {
     $salida = & aws @argsList
     if ($LASTEXITCODE -ne 0) { throw "AWS: $($argsList -join ' ')" }
@@ -17,9 +22,9 @@ function Tf($argsList) {
 }
 
 function Etapa($nombre, [scriptblock]$accion) {
-    Write-Host "`n$nombre" -ForegroundColor Cyan
+    Write-Host "`n$nombre"
     & $accion
-    Write-Host 'OK' -ForegroundColor Green
+    Write-Host 'OK'
 }
 
 function JsonTemporal($datos) {
@@ -89,7 +94,10 @@ Etapa 'Configuracion' {
         $bucket -match '(\.\.|\.-|-\.)|^\d+\.\d+\.\d+\.\d+$') {
         throw 'Nombre del bucket backend invalido'
     }
-    $script:sshCidr = Read-Host 'Tu IP publica autorizada para SSH (formato X.X.X.X/32; SSH permanece cerrado y se usa SSM)'
+    $script:sshCidr = [string]$config.ip_publica
+    if ([string]::IsNullOrWhiteSpace($sshCidr) -or $sshCidr -eq '203.0.113.10/32') {
+        $script:sshCidr = Read-Host 'Tu IP publica en formato X.X.X.X/32 (tambien se puede fijar en config.psd1 como ip_publica)'
+    }
     $partes = $sshCidr -split '/'
     $ipValida = $false
     if ($partes.Count -eq 2 -and $partes[1] -eq '32') {
@@ -228,7 +236,7 @@ Etapa 'Verificacion snapshots etcd' {
     )
     Write-Host $resultado
     if ($resultado -notmatch 'SNAPSHOT_S3_OK') {
-        Write-Warning 'K3s funciona, pero no se verifico la copia S3. Revisar permisos del LabRole.'
+        Write-Host 'AVISO: K3s funciona, pero no se verifico la copia S3. Revisar permisos del LabRole.'
     }
 }
 
@@ -307,9 +315,11 @@ Etapa 'Validacion final' {
                 break
             }
         } catch {}
-        Start-Sleep 10
+     
+           Start-Sleep 10
+
     }
     if (-not $ok) { throw 'Online Boutique no responde HTTP 200' }
 }
 
-Write-Host "`nONLINE BOUTIQUE: $url" -ForegroundColor Green
+Write-Host "`nONLINE BOUTIQUE: $url"

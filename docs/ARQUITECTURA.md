@@ -11,7 +11,7 @@
 | Application Load Balancer | Entrada pública HTTP 80 |
 | Amazon EFS | Volumen persistente del pod de Redis |
 | AWS Backup | Respaldo diario de EFS |
-| Amazon S3 | Estado de Terraform, snapshots de etcd, logs de acceso del ALB |
+| Amazon S3 | Estado de Terraform y copias de los snapshots de etcd (buckets creados por `desplegar.ps1` con AWS CLI) |
 | CloudWatch (métricas, alarmas, dashboard, Logs) y SNS | Monitoreo, logs y notificaciones |
 | Systems Manager (SSM) | Administración de instancias sin SSH |
 
@@ -40,7 +40,7 @@
 |---|---|
 | Pierde un pod | Kubernetes lo recrea; cada servicio tiene ≥ 2 réplicas |
 | Pierde un nodo / una AZ | Quedan 2 de 3 miembros de etcd (quórum); el ALB deja de enviarle tráfico por health check; los pods se reprograman |
-| Fallo del host subyacente | Alarma `StatusCheckFailed_System` con acción `ec2:recover` (variable `habilitar_recuperacion_ec2`) |
+| Fallo del host subyacente | La alarma `StatusCheckFailed_System` avisa por SNS. La acción automática `ec2:recover` solo se activa con `habilitar_recuperacion_ec2 = true` (por defecto `false`, pendiente de validar permisos en AWS Academy) |
 | Pierde Redis | Se reprograma y recupera el AOF desde EFS |
 | Mantenimiento | `PodDisruptionBudget` (`minAvailable: 1`) en los 10 servicios |
 

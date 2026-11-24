@@ -1,8 +1,20 @@
-# Modulo logging
+# Módulo `logging`
 
-Crea un grupo CloudWatch Logs para los logs de K3s y de los pods.
-No administra buckets S3 de logs ALB por incompatibilidad con las politicas conocidas de AWS Academy.
+> Documentación generada a partir de `variables.tf`, `outputs.tf` y `main.tf`.
 
-Variables: `nombre_proyecto` y `dias_retencion`.
+## Recursos
 
-Salida: `log_group_name`.
+- `aws_cloudwatch_log_group.k3s`
+
+## Variables
+
+| Nombre | Tipo | Descripción | Valor por defecto |
+|---|---|---|---|
+| `nombre_proyecto` | `string` |  | obligatoria |
+| `dias_retencion` | `number` |  | obligatoria |
+
+## Salidas
+
+| Nombre | Descripción |
+|---|---|
+| `log_group_name` | "Nombre del grupo CloudWatch Logs para K3s." |

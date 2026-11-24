@@ -58,6 +58,7 @@ kubectl get pods -w
 |---|---|
 | Existe un recovery point de AWS Backup (EFS) | |
 | Se restauró el recovery point | |
-| Llegan snapshots de etcd al bucket S3 | |
+| Llegan snapshots de etcd a `s3://isc-obligatorio-etcd-<cuenta>/snapshots/` (la copia se intenta a los 20 min del arranque y luego cada 12 h) | |
 | Se probó la restauración de etcd | |
-| Llegan logs al grupo `/isc-obligatorio/k3s` y al bucket de logs del ALB | |
+| Llegan logs al grupo de CloudWatch `/isc-obligatorio/k3s` | |
+| Llegan métricas de memoria (`CWAgent`) y las alarmas de memoria/disco salen de «sin datos» | |

@@ -2,7 +2,7 @@
 
 Despliegue automatizado de **Online Boutique** (e-commerce de microservicios) en AWS con **Terraform** y **K3s**, pensado para soportar picos de tráfico y la caída de una zona de disponibilidad.
 
-**Estado:** desplegado y verificado desde una cuenta AWS Academy reiniciada el 23/11/2026 (3 nodos Ready, microservicios disponibles, HTTP 200 por el ALB). Los cambios posteriores (logs centralizados, nuevas alarmas, Security Groups como recursos independientes, bucket de etcd en Terraform) requieren una nueva validación: ver [`docs/PRUEBAS.md`](docs/PRUEBAS.md).
+**Estado:** la versión base se desplegó y verificó desde una cuenta AWS Academy reiniciada el 23/11/2026 (3 nodos Ready, microservicios disponibles, HTTP 200 por el ALB). Esta versión ampliada (logs en CloudWatch, alarmas adicionales, Security Groups como recursos independientes, HPA/PDB en microservicios) **todavía no pasó un despliegue integral desde cero**. Restricciones y límites de AWS Academy en [`docs/COMPATIBILIDAD-AWS-ACADEMY.md`](docs/COMPATIBILIDAD-AWS-ACADEMY.md); registro de pruebas en [`docs/PRUEBAS.md`](docs/PRUEBAS.md).
 
 ![Arquitectura](docs/arquitectura.png)
 
@@ -15,7 +15,7 @@ Despliegue automatizado de **Online Boutique** (e-commerce de microservicios) en
 | Load balancer | Application Load Balancer (HTTP 80 → NodePort 30080) |
 | Dos servidores de aplicación | 3 EC2 `t3.medium` con K3s (etcd embebido), una por AZ; pods replicados |
 | Base de datos | Redis (almacén de carritos de Online Boutique) con persistencia AOF sobre Amazon EFS cifrado |
-| Solución de respaldos | AWS Backup (EFS, diario) + snapshots de etcd a S3 cada 12 h |
+| Solución de respaldos | AWS Backup (EFS, diario) + snapshots de etcd cada 12 h (copia a S3 con reintento, ver [`docs/RESPALDOS.md`](docs/RESPALDOS.md)) |
 
 Detalle y justificación en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 
@@ -28,13 +28,15 @@ Detalle y justificación en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 | [`docs/RESPALDOS.md`](docs/RESPALDOS.md) | Respaldos y procedimientos de recuperación |
 | [`docs/MONITOREO.md`](docs/MONITOREO.md) | Alarmas, dashboard y logs centralizados |
 | [`docs/OPERACION.md`](docs/OPERACION.md) | Despliegue, configuración, variables y operación |
+| [`docs/COMPATIBILIDAD-AWS-ACADEMY.md`](docs/COMPATIBILIDAD-AWS-ACADEMY.md) | Restricciones de AWS Academy y decisiones tomadas por ellas |
+| [`docs/MEJORAS-INTEGRADAS.md`](docs/MEJORAS-INTEGRADAS.md) | Qué mejoras se integraron y cuáles no |
 | [`docs/PRUEBAS.md`](docs/PRUEBAS.md) | Pruebas de carga y de fallas (procedimiento y registro de resultados) |
 | `terraform/modules/*/README.md` | Recursos, variables y salidas de cada módulo |
 
 ## Inicio rápido
 
 1. Instalar los requisitos (tabla siguiente) y configurar credenciales de AWS Academy.
-2. Copiar `config.example.psd1` a `config.psd1` y completar `alerta_mail` y `nombre_bucket`.
+2. (Opcional) copiar `config.example.psd1` a `config.psd1` con `alerta_mail` y `nombre_bucket`. Si no existe, el script pide el correo y calcula el nombre del bucket de estado.
 3. Ejecutar `.\validar.ps1` y luego `.\desplegar.ps1`.
 4. Al terminar, el script imprime la URL pública de Online Boutique.
 
@@ -61,8 +63,8 @@ Más detalle en [`docs/OPERACION.md`](docs/OPERACION.md).
 | `terraform/modules/network/` | VPC, subredes, Internet Gateway, NAT |
 | `terraform/modules/security/` | Security Groups y reglas |
 | `terraform/modules/compute/` | EC2 K3s (user_data), ALB y Target Group |
-| `terraform/modules/storage/` | EFS, AWS Backup y bucket S3 de etcd |
-| `terraform/modules/logging/` | CloudWatch Logs y bucket de logs del ALB (no implementado) |
+| `terraform/modules/storage/` | EFS y AWS Backup |
+| `terraform/modules/logging/` | Grupo de CloudWatch Logs de nodos y pods |
 | `terraform/modules/monitoring/` | Alarmas, dashboard y SNS |
 | `kubernetes/app.yaml` | Manifiestos de Online Boutique, HPA y PDB |
 | `pruebas/` | Scripts de carga (k6) y de falla de instancia |

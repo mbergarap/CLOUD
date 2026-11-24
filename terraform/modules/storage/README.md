@@ -9,10 +9,6 @@
 - `aws_backup_vault.redis`
 - `aws_backup_plan.redis`
 - `aws_backup_selection.redis`
-- `aws_s3_bucket.etcd`
-- `aws_s3_bucket_public_access_block.etcd`
-- `aws_s3_bucket_server_side_encryption_configuration.etcd`
-- `aws_s3_bucket_lifecycle_configuration.etcd`
 
 ## Variables
 
@@ -27,4 +23,4 @@
 | Nombre | Descripción |
 |---|---|
 | `efs_id` | "Identificador del sistema de archivos EFS." |
-| `etcd_bucket` | "Bucket S3 donde K3s guarda los snapshots de etcd." |
+| `etcd_bucket` | "Nombre calculado del bucket de snapshots de etcd." |
