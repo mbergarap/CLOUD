@@ -19,6 +19,7 @@ module "storage" {
   nombre_proyecto = var.nombre_proyecto
   private_subnets = module.network.private_subnets
   efs_sg_id       = module.security.efs_sg_id
+  nombre_bucket   = var.nombre_bucket
 }
 
 # LOGS CENTRALIZADOS
@@ -44,7 +45,7 @@ module "compute" {
   log_group       = module.logging.log_group_name
 
   # La ruta NAT, EFS y los logs deben existir antes de arrancar los servidores.
-  depends_on = [module.network, module.storage, module.logging]
+  depends_on = [module.network, module.storage, module.logging, terraform_data.bucket_etcd]
 }
 
 # MONITOREO
@@ -59,3 +60,4 @@ module "monitoring" {
   log_group                  = module.logging.log_group_name
   habilitar_recuperacion_ec2 = var.habilitar_recuperacion_ec2
 }
+

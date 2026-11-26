@@ -13,3 +13,9 @@ variable "efs_sg_id" {
   description = "Security Group de EFS."
   type        = string
 }
+
+# BUCKET DE SNAPSHOTS ETCD
+variable "nombre_bucket" {
+  description = "Nombre del bucket S3 para los snapshots de etcd."
+  type        = string
+}

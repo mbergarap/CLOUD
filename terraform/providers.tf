@@ -11,7 +11,7 @@ terraform {
       version = "~> 3.6"
     }
   }
-  backend "s3" {}
+  # Estado local: Terraform no requiere preparar un bucket S3 previo.
 }
 
 # PROVEEDOR AWS

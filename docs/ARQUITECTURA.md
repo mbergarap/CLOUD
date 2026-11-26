@@ -11,7 +11,7 @@
 | Application Load Balancer | Entrada pública HTTP 80 |
 | Amazon EFS | Volumen persistente del pod de Redis |
 | AWS Backup | Respaldo diario de EFS |
-| Amazon S3 | Estado de Terraform y copias de los snapshots de etcd (buckets creados por `desplegar.ps1` con AWS CLI) |
+| Amazon S3 | Copias de los snapshots de etcd (bucket creado mediante AWS CLI invocado por Terraform; estado Terraform local) |
 | CloudWatch (métricas, alarmas, dashboard, Logs) y SNS | Monitoreo, logs y notificaciones |
 | Systems Manager (SSM) | Administración de instancias sin SSH |
 

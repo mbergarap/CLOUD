@@ -2,7 +2,7 @@
 
 Despliegue automatizado de **Online Boutique** (e-commerce de microservicios) en AWS con **Terraform** y **K3s**, pensado para soportar picos de tráfico y la caída de una zona de disponibilidad.
 
-**Estado:** la versión base se desplegó y verificó desde una cuenta AWS Academy reiniciada el 23/11/2026 (3 nodos Ready, microservicios disponibles, HTTP 200 por el ALB). Esta versión ampliada (logs en CloudWatch, alarmas adicionales, Security Groups como recursos independientes, HPA/PDB en microservicios) **todavía no pasó un despliegue integral desde cero**. Restricciones y límites de AWS Academy en [`docs/COMPATIBILIDAD-AWS-ACADEMY.md`](docs/COMPATIBILIDAD-AWS-ACADEMY.md); registro de pruebas en [`docs/PRUEBAS.md`](docs/PRUEBAS.md).
+**Estado:** la variante de cuatro comandos se desplegó exitosamente en AWS Academy y Online Boutique respondió HTTP 200 con tres targets saludables. Esto no acredita por sí solo todas las pruebas funcionales de respaldo, recuperación y observabilidad.
 
 ![Arquitectura](docs/arquitectura.png)
 
@@ -29,16 +29,29 @@ Detalle y justificación en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 | [`docs/MONITOREO.md`](docs/MONITOREO.md) | Alarmas, dashboard y logs centralizados |
 | [`docs/OPERACION.md`](docs/OPERACION.md) | Despliegue, configuración, variables y operación |
 | [`docs/COMPATIBILIDAD-AWS-ACADEMY.md`](docs/COMPATIBILIDAD-AWS-ACADEMY.md) | Restricciones de AWS Academy y decisiones tomadas por ellas |
-| [`docs/MEJORAS-INTEGRADAS.md`](docs/MEJORAS-INTEGRADAS.md) | Qué mejoras se integraron y cuáles no |
 | [`docs/PRUEBAS.md`](docs/PRUEBAS.md) | Pruebas de carga y de fallas (procedimiento y registro de resultados) |
-| `terraform/modules/*/README.md` | Recursos, variables y salidas de cada módulo |
 
-## Inicio rápido
+## Inicio rápido — Terraform sin `desplegar.ps1`
 
-1. Instalar los requisitos (tabla siguiente) y configurar credenciales de AWS Academy.
-2. (Opcional) copiar `config.example.psd1` a `config.psd1` con `alerta_mail` y `nombre_bucket`. Si no existe, el script pide el correo y calcula el nombre del bucket de estado.
-3. Ejecutar `.\validar.ps1` y luego `.\desplegar.ps1`.
-4. Al terminar, el script imprime la URL pública de Online Boutique.
+Solo para una **cuenta AWS Academy limpia**, con AWS CLI v2 autenticado y PowerShell en Windows:
+
+```powershell
+cd terraform
+terraform init
+terraform validate
+terraform plan
+terraform apply
+```
+
+Antes de iniciar, copiar `terraform/terraform.tfvars.example` a `terraform/terraform.tfvars` y completar `alerta_mail` y `nombre_bucket`. El nombre del bucket S3 debe terminar con el ID de 12 dígitos de la cuenta AWS activa (se comprueba mediante AWS CLI). No es necesario crear buckets ni configurar SSH: no hay acceso SSH público a los nodos; se administra mediante SSM. Confirmar el plan antes de responder `yes` a `apply`.
+
+En `apply`, Terraform configura VPC, seguridad, EC2, K3s, EFS, ALB, logs, AWS Backup, SNS y CloudWatch; luego invoca automáticamente **AWS CLI mediante PowerShell** para crear el bucket de snapshots y usar SSM para etiquetar las AZ, aplicar Online Boutique y realizar las validaciones. Los scripts auxiliares son parte de la ejecución de Terraform: **no hay que ejecutarlos manualmente**.
+
+**Estado local:** el archivo `terraform/terraform.tfstate` contiene secretos como el token de K3s. La carpeta del proyecto debe permanecer privada; no subir el archivo ni las copias `.backup` a Git, no borrarlo y no intercambiarlo entre cuentas. Para trabajo en equipo simultáneo resulta más seguro un estado remoto con bloqueo, pero la consigna no exige esa modalidad.
+
+**ADVERTENCIA:** no ejecutar esta variante con estado local vacío contra una cuenta que ya tiene el obligatorio creado. Terraform podría intentar crear recursos duplicados. No usarla en una cuenta que conserve infraestructura y un backend S3 de una ejecución anterior. Para una migración de estado existente hace falta un procedimiento específico y revisión previa; no usar `-reconfigure` para ocultar el estado anterior. Esta variante se ha probado con `apply` real, HTTP 200 y tres targets sanos. Las demás verificaciones deben documentarse por separado.
+
+**Recuperación si falla la finalización de Kubernetes:** no borrar el estado ni ejecutar `destroy`. Revisar las salidas de Terraform/SSM. Una vez resuelta la causa, un operador puede planificar específicamente `-replace=terraform_data.finalizar_kubernetes`, previa revisión de su plan. El bucket de snapshots creado por AWS CLI es idempotente y queda fuera de la gestión de destrucción de Terraform para preservar las copias.
 
 Más detalle en [`docs/OPERACION.md`](docs/OPERACION.md).
 
@@ -69,8 +82,8 @@ Más detalle en [`docs/OPERACION.md`](docs/OPERACION.md).
 | `kubernetes/app.yaml` | Manifiestos de Online Boutique, HPA y PDB |
 | `pruebas/` | Scripts de carga (k6) y de falla de instancia |
 | `docs/` | Documentación y diagrama |
-| `desplegar.ps1`, `validar.ps1` | Automatización del despliegue y validaciones previas |
-| `.github/workflows/terraform.yml` | CI: `fmt` y `validate` |
+| `terraform/automatizacion.tf` | Arranque del bucket etcd y finalización de Kubernetes dentro de `terraform apply` |
+| `terraform/scripts/` | Scripts auxiliares llamados exclusivamente por Terraform |
 
 ## Uso de inteligencia artificial
 
@@ -89,4 +102,4 @@ Los resultados generados o revisados con asistencia de IA fueron evaluados por e
 
 ## Nota de portabilidad y AWS Academy
 
-`desplegar.ps1` puede ejecutarse sin `config.psd1`: solicita correo SNS, una IP publica /32 de referencia (SSH permanece cerrado por seguridad) y genera el nombre del backend S3 a partir de la cuenta AWS. Para cuentas con estado previo, conservar el mismo nombre de bucket en `config.psd1`. El bucket de snapshots etcd se administra con AWS CLI y no Terraform, debido a un rechazo SCP de Object Lock registrado en AWS Academy. Los snapshots se generan localmente y se intentan sincronizar a S3 mediante un temporizador independiente para no bloquear el inicio de K3s. La copia remota y esta variante ampliada requieren pruebas reales.
+En esta variante, Terraform conserva estado local y genera el bucket de snapshots etcd mediante AWS CLI invocado desde un provisioner. Esto evita la consulta Object Lock bloqueada por SCP en AWS Academy. La ruta `terraform apply` fue probada en AWS Academy; las verificaciones de resiliencia y restauración requieren evidencias adicionales. El antiguo `desplegar.ps1` conserva el flujo con backend S3 y **no debe mezclarse** con el nuevo flujo de estado local.

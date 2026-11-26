@@ -1,0 +1,5 @@
+# Copiar este archivo como terraform.tfvars y completar ambos valores.
+# El bucket debe ser unico globalmente y TERMINAR con el ID de 12 digitos de la cuenta AWS.
+# Obtener el ID: aws sts get-caller-identity --query Account --output text
+alerta_mail   = "correo@ejemplo.com"
+nombre_bucket = "isc-obligatorio-etcd-123456789012"

@@ -4,7 +4,7 @@ Este documento es el registro de evidencia. **Completar con las salidas reales**
 
 ## Verificaciones del despliegue
 
-`desplegar.ps1` comprueba automáticamente: 3 EC2 en SSM, 3 nodos `Ready`, microservicios disponibles, Redis `PONG` con AOF, PVC enlazado, HPA/PDB creados, 17 alarmas, grupo de logs, dashboard, plan de AWS Backup, suscripción SNS, ≥ 2 targets sanos y HTTP 200.
+`terraform apply`, mediante el script de finalización por SSM, comprueba: 3 EC2 en SSM, 3 nodos `Ready`, microservicios disponibles, Redis `PONG` con AOF, PVC enlazado, HPA/PDB creados, 17 alarmas, grupo de logs, dashboard, plan de AWS Backup, suscripción SNS, ≥ 2 targets sanos y HTTP 200.
 
 ## 1. Prueba de carga
 
@@ -58,7 +58,7 @@ kubectl get pods -w
 |---|---|
 | Existe un recovery point de AWS Backup (EFS) | |
 | Se restauró el recovery point | |
-| Llegan snapshots de etcd a `s3://isc-obligatorio-etcd-<cuenta>/snapshots/` (la copia se intenta a los 20 min del arranque y luego cada 12 h) | |
+| Llegan snapshots de etcd a `s3://<nombre_bucket>/snapshots/` (la copia se intenta a los 20 min del arranque y luego cada 12 h) | |
 | Se probó la restauración de etcd | |
 | Llegan logs al grupo de CloudWatch `/isc-obligatorio/k3s` | |
 | Llegan métricas de memoria (`CWAgent`) y las alarmas de memoria/disco salen de «sin datos» | |

@@ -1,20 +1,33 @@
 # Operación
 
-## Despliegue
+## Despliegue sin `desplegar.ps1`
+
+**Requiere cuenta AWS Academy limpia** (no reutilizar la cuenta que tiene infraestructura Terraform remota anterior). Se trabaja en Windows con PowerShell 5.1+ y AWS CLI v2.
+
+Desde la raíz del repositorio:
 
 ```powershell
-copy config.example.psd1 config.psd1   # OPCIONAL: sin este archivo, el script pide el correo y calcula el bucket
-.\validar.ps1
-.\desplegar.ps1
+cd terraform
+terraform init
+terraform validate
+terraform plan
+terraform apply
 ```
 
-`desplegar.ps1` crea con AWS CLI el bucket de estado y el de snapshots de etcd (cifrados, sin acceso público), ejecuta `init`/`validate`/`plan`/`apply`, espera a K3s, aplica `kubernetes/app.yaml`, verifica Redis/EFS, monitoreo, logs y backups, y comprueba que el ALB responda 200. **Aborta si el plan incluye eliminaciones o reemplazos.**
+Antes de ejecutar Terraform, copiar `terraform.tfvars.example` como `terraform.tfvars`, completar `alerta_mail` y `nombre_bucket` y verificar que el nombre del bucket termine en el ID AWS activo de 12 dígitos. Durante `apply`, el recurso `terraform_data.bucket_etcd` invoca `scripts/crear-bucket-etcd.ps1` para preparar el bucket S3 de snapshots mediante AWS CLI (evitando Object Lock, que una SCP de AWS Academy deniega). `module.compute` espera ese recurso antes de iniciar las EC2. El recurso `terraform_data.finalizar_kubernetes` espera Terraform y, mediante SSM, comprueba K3s, etiqueta AZ, aplica `kubernetes/app.yaml` con EFS, verifica Redis y los HPA/PDB, monitoreo y acceso HTTP por ALB. **No hay un backend remoto S3 en esta modalidad.**
+
+No es un despliegue puramente declarativo: Terraform utiliza provisioners y la ejecución local de AWS CLI como transición por restricciones del laboratorio. El operador no necesita correrlos por separado. La ruta fue probada con un `apply` real y acceso HTTP 200; respaldos, restauraciones y observabilidad deben verificarse por separado.
+
+**Estado local:** conservar `terraform.tfstate`, controlar acceso a la PC y mantenerlo fuera de Git. El token del clúster puede aparecer en el estado. Los snapshots etcd en S3 permanecen fuera del estado, y no se borran al ejecutar `terraform destroy`; gestionar su limpieza solo después de aprobarla.
+
+**No mezclar flujos:** esta variante usa estado local; nunca ejecutar sobre infraestructura administrada mediante otro estado sin un procedimiento específico de migración. No crear recursos duplicados en una cuenta que ya contenga recursos del obligatorio.
 
 ## Variables de Terraform (`terraform/variables.tf`)
 
 | Variable | Defecto | Descripción |
 |---|---|---|
-| `alerta_mail` | (obligatoria) | Correo de alertas (el script la toma de `config.psd1` o la pide) |
+| `alerta_mail` | (obligatoria) | Correo de alertas SNS; definir en `terraform.tfvars` |
+| `nombre_bucket` | (obligatoria) | Nombre de bucket etcd único, terminado en el ID de cuenta AWS |
 | `nombre_proyecto` | `isc-obligatorio` | Prefijo de nombres |
 | `region` | `us-east-1` | Región |
 | `cidr_vpc` | `10.80.0.0/16` | CIDR de la VPC |
@@ -23,11 +36,11 @@ copy config.example.psd1 config.psd1   # OPCIONAL: sin este archivo, el script p
 | `dias_retencion_logs` | `14` | Retención de logs |
 | `habilitar_recuperacion_ec2` | `false` | Recuperación automática de EC2 | (activar solo si AWS Academy lo permite)
 
-> `desplegar.ps1` y las alarmas usan el prefijo `isc-obligatorio`: si se cambia `nombre_proyecto`, ajustar también el script.
+> Mantener el prefijo de proyecto predeterminado salvo que también se revisen las referencias utilizadas por los scripts y las alarmas.
 
 ## Ya existe un despliegue anterior
 
-Esta versión cambia los Security Groups a reglas independientes. Sobre una infraestructura creada con la versión anterior, el plan incluiría eliminaciones de reglas y `desplegar.ps1` lo bloqueará. Opciones: desplegar en una cuenta limpia (recomendado) o revisar el plan a mano. Los buckets de estado y de etcd no forman parte del estado de Terraform, por lo que no se ven afectados.
+**No ejecutar la variante de estado local contra la cuenta existente con estado S3.** El estado local vacío no reconoce los recursos antiguos y el plan podría mostrar creaciones duplicadas. La migración de backend requiere primero estudiar el estado remoto, los recursos y el procedimiento de migración. No eliminar ni sobrescribir el S3 anterior.
 
 ## Comandos útiles
 
@@ -36,7 +49,3 @@ aws ssm start-session --target <id-instancia>   # acceso sin SSH
 sudo k3s kubectl get nodes,pods -o wide
 sudo k3s kubectl get hpa,pdb
 ```
-
-## Integración continua
-
-`.github/workflows/terraform.yml` ejecuta `terraform fmt -check` y `terraform validate` en cada push y pull request.

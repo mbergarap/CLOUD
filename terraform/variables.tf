@@ -2,6 +2,10 @@
 variable "alerta_mail" {
   description = "Correo electronico que recibira las alertas SNS."
   type        = string
+  validation {
+    condition     = can(regex("^[^\\s@'\"]+@[^\\s@'\"]+\\.[^\\s@'\"]+$", var.alerta_mail))
+    error_message = "Ingresa un correo SNS valido sin espacios ni comillas."
+  }
 }
 
 # NOMBRE DEL PROYECTO
@@ -50,4 +54,10 @@ variable "habilitar_recuperacion_ec2" {
   description = "Alarma que recupera automaticamente una instancia ante fallo de hardware (StatusCheckFailed_System)."
   type        = bool
   default     = false
+}
+
+# BUCKET DE SNAPSHOTS ETCD
+variable "nombre_bucket" {
+  description = "Nombre del bucket S3 para los snapshots de etcd."
+  type        = string
 }
