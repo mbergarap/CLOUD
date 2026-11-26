@@ -7,16 +7,29 @@ param(
 $ErrorActionPreference = 'Stop'
 
 function Invoke-AwsCli([string[]]$ArgsList) {
-    $r = & aws @ArgsList 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "AWS CLI ($($ArgsList[0..1] -join ' ')): $($r | Out-String)" }
-    return ($r | Out-String).Trim()
+    $ErrorActionPreference = 'Continue'
+
+    $r = & aws.exe @ArgsList 2>&1
+    $codigo = $LASTEXITCODE
+    $mensaje = ($r | Out-String).Trim()
+
+    if ($codigo -ne 0) {
+        throw "AWS CLI ($($ArgsList[0..1] -join ' ')) fallo con codigo ${codigo}: $mensaje"
+    }
+
+    return $mensaje
 }
 
 if (-not (Get-Command aws -ErrorAction SilentlyContinue)) { throw 'AWS CLI no esta instalado.' }
 $account = Invoke-AwsCli @('sts','get-caller-identity','--query','Account','--output','text')
 if ($account -ne $ExpectedAccount) { throw "La cuenta AWS CLI no coincide con la cuenta del proveedor Terraform." }
-if ($account -notmatch '^\d{12}$' -or $Bucket -notlike "*-$account") {
-    throw 'Cuenta AWS y nombre del bucket no coinciden. Se detiene por seguridad.'
+if ($account -notmatch '^\d{12}$') {
+    throw 'El identificador de la cuenta AWS no es valido.'
+}
+if ($Bucket -notmatch '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$' -or
+    $Bucket -match '\.\.' -or
+    $Bucket -match '^\d{1,3}(\.\d{1,3}){3}$') {
+    throw 'Nombre de bucket S3 no valido.'
 }
 $all = Invoke-AwsCli @('s3api','list-buckets','--query','Buckets[].Name','--output','text')
 if (@($all -split '\s+') -notcontains $Bucket) {
@@ -43,4 +56,6 @@ try {
     Remove-Item $encryption,$lifecycle -ErrorAction SilentlyContinue
 }
 Write-Host "Bucket etcd protegido y configurado: $Bucket"
+
+
 
