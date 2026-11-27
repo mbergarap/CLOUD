@@ -1,12 +1,12 @@
-# VPC
+# MUESTRA EL IDENTIFICADOR DE LA VPC.
 output "vpc_id" {
   value = aws_vpc.main.id
 }
-# SUBREDES PUBLICAS
+# MUESTRA LOS IDENTIFICADORES DE LAS SUBREDES PÚBLICAS.
 output "public_subnets" {
   value = aws_subnet.public[*].id
 }
-# SUBREDES PRIVADAS
+# MUESTRA LOS IDENTIFICADORES DE LAS SUBREDES PRIVADAS.
 output "private_subnets" {
   value = aws_subnet.private[*].id
 }

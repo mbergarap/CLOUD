@@ -1,36 +1,43 @@
-# Se crea mediante AWS CLI invocado por Terraform para evitar ese permiso denegado.
-data "aws_caller_identity" "deploy" {}
+# ESPERA A QUE K3S Y ONLINE BOUTIQUE ESTEN DISPONIBLES.
+resource "aws_ssm_association" "verificar_kubernetes" {
+  name                             = "AWS-RunShellScript"
+  association_name                 = "${var.nombre_proyecto}-verificar-kubernetes"
+  wait_for_success_timeout_seconds = 3600
 
-locals {
-  etcd_bucket = var.nombre_bucket
-}
-
-resource "terraform_data" "bucket_etcd" {
-  triggers_replace = [local.etcd_bucket, var.region, filesha256("${path.module}/scripts/crear-bucket-etcd.ps1")]
-
-  provisioner "local-exec" {
-    interpreter = ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command"]
-    command     = "& '${abspath(path.module)}/scripts/crear-bucket-etcd.ps1' -Region '${var.region}' -Bucket '${local.etcd_bucket}' -ExpectedAccount '${data.aws_caller_identity.deploy.account_id}'"
+  # EJECUTA LA VERIFICACION EN EL SERVIDOR PRINCIPAL.
+  targets {
+    key    = "InstanceIds"
+    values = [module.compute.instance_ids[0]]
   }
-}
 
-# DESPLIEGUE Y VALIDACION KUBERNETES
-# Terraform espera las instancias, EFS, alarmas y los permisos de red.
-# Se ejecuta mediante SSM: no se necesita SSH ni kubectl local.
-resource "terraform_data" "finalizar_kubernetes" {
-  triggers_replace = [
-    join(",", module.compute.instance_ids),
-    module.storage.efs_id,
-    filesha256("${path.module}/../kubernetes/app.yaml"),
-    filesha256("${path.module}/scripts/finalizar-kubernetes.ps1"),
+  # GENERA EL SCRIPT CON SALTOS DE LINEA LINUX.
+  parameters = {
+    executionTimeout = "3600"
+
+    commands = join("\n", [
+      "#!/bin/bash",
+      "set -euo pipefail",
+      "cloud-init status --wait",
+      "test \"$(cloud-init status)\" = \"status: done\"",
+      "for INTENTO in $(seq 1 180); do",
+      "  NODOS=$(k3s kubectl get nodes --no-headers 2>/dev/null | awk '$2 == \"Ready\" {n++} END {print n+0}' || true)",
+      "  FRONTEND=$(k3s kubectl get deployment frontend -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)",
+      "  HTTP=000",
+      "  if [ \"$NODOS\" = \"3\" ] && [ \"$FRONTEND\" = \"2\" ]; then",
+      "    HTTP=$(curl -sS --max-time 10 -o /dev/null -w '%%{http_code}' 'http://${module.compute.alb_dns}/' || true)",
+      "  fi",
+      "  if [ \"$NODOS\" = \"3\" ] && [ \"$FRONTEND\" = \"2\" ] && [ \"$HTTP\" = \"200\" ]; then",
+      "    echo 'K3S Y ONLINE BOUTIQUE DISPONIBLES. HTTP 200.'",
+      "    exit 0",
+      "  fi",
+      "  sleep 10",
+      "done",
+      "echo 'ERROR: ONLINE BOUTIQUE NO ESTA DISPONIBLE.' >&2",
+      "exit 1",
+    ])
+  }
+
+  depends_on = [
+    module.compute
   ]
-
-  depends_on = [module.compute, module.storage, module.monitoring, terraform_data.bucket_etcd]
-
-  provisioner "local-exec" {
-    interpreter = ["powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command"]
-    command     = "& '${abspath(path.module)}/scripts/finalizar-kubernetes.ps1' -Region '${var.region}' -NombreProyecto '${var.nombre_proyecto}' -Instancias '${join(",", module.compute.instance_ids)}' -EfsId '${module.storage.efs_id}' -Url 'http://${module.compute.alb_dns}' -Correo '${var.alerta_mail}' -ManifestPath '${abspath("${path.module}/../kubernetes/app.yaml")}' -ExpectedAccount '${data.aws_caller_identity.deploy.account_id}'"
-  }
 }
-
-

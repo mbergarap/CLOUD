@@ -1,5 +1,5 @@
 
-# ALMACENAMIENTO EFS
+# CREA EL SISTEMA DE ARCHIVOS EFS PARA EL ALMACENAMIENTO DE REDIS.
 resource "aws_efs_file_system" "redis" {
   creation_token   = "${var.nombre_proyecto}-redis"
   encrypted        = true
@@ -8,7 +8,7 @@ resource "aws_efs_file_system" "redis" {
   tags             = { Name = "${var.nombre_proyecto}-redis" }
 }
 
-# PUNTOS DE MONTAJE
+# CREA TRES PUNTOS DE MONTAJE DE EFS EN LAS SUBREDES PRIVADAS.
 resource "aws_efs_mount_target" "redis" {
   count           = 3
   file_system_id  = aws_efs_file_system.redis.id
@@ -16,16 +16,17 @@ resource "aws_efs_mount_target" "redis" {
   security_groups = [var.efs_sg_id]
 }
 
-# ROL EXISTENTE DE AWS ACADEMY
+# OBTIENE EL ROL IAM EXISTENTE DE AWS ACADEMY PARA LOS RESPALDOS.
 data "aws_iam_role" "backup" {
   name = "LabRole"
 }
 
-# RESPALDOS AUTOMATICOS
+# CREA EL ALMACÉN DE RESPALDOS DE AWS BACKUP.
 resource "aws_backup_vault" "redis" {
   name = "${var.nombre_proyecto}-redis"
 }
 
+# CONFIGURA LOS RESPALDOS DIARIOS DE EFS CON UNA RETENCIÓN DE SIETE DÍAS.
 resource "aws_backup_plan" "redis" {
   name = "${var.nombre_proyecto}-redis"
 
@@ -42,6 +43,7 @@ resource "aws_backup_plan" "redis" {
   }
 }
 
+# ASOCIA EL SISTEMA DE ARCHIVOS EFS AL PLAN DE RESPALDOS.
 resource "aws_backup_selection" "redis" {
   name         = "${var.nombre_proyecto}-redis"
   iam_role_arn = data.aws_iam_role.backup.arn

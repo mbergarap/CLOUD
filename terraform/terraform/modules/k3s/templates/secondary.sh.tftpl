@@ -1,0 +1,101 @@
+
+#!/bin/bash
+set -euo pipefail
+
+# REGISTRA LA INSTALACION DE K3S EN UN ARCHIVO Y EN LOS LOGS DEL SISTEMA.
+exec > >(tee /var/log/isc-k3s-install.log | logger -t isc-k3s -s 2>/dev/console) 2>&1
+
+# INSTALA LAS HERRAMIENTAS NFS Y VERIFICA LA DISPONIBILIDAD DE CURL.
+dnf install -y nfs-utils
+command -v curl >/dev/null
+
+# CONFIGURA CLOUDWATCH PARA RECOPILAR LOGS DE INSTALACION, PODS Y METRICAS DEL SERVIDOR.
+# SI LA CONFIGURACION FALLA, PERMITE CONTINUAR CON LA INSTALACION DE K3S.
+(
+  dnf install -y amazon-cloudwatch-agent
+  cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json <<'CWCFG'
+{
+  "agent": { "metrics_collection_interval": 60, "run_as_user": "root" },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          { "file_path": "/var/log/isc-k3s-install.log", "log_group_name": "${log_group}", "log_stream_name": "{instance_id}/instalacion" },
+          { "file_path": "/var/log/pods/*/*/*.log", "log_group_name": "${log_group}", "log_stream_name": "{instance_id}/pods" }
+        ]
+      }
+    }
+  },
+  "metrics": {
+    "append_dimensions": { "InstanceId": "$${aws:InstanceId}" },
+    "metrics_collected": {
+      "mem": { "measurement": ["mem_used_percent"] },
+      "disk": { "measurement": ["used_percent"], "resources": ["/"] }
+    }
+  }
+}
+CWCFG
+  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
+) || echo "AVISO: CloudWatch Agent no se pudo configurar"
+
+# ESPERA QUE EL SERVIDOR PRINCIPAL DE K3S ESTE DISPONIBLE EN EL PUERTO 6443.
+for i in $(seq 1 120); do
+  if timeout 2 bash -c 'echo > /dev/tcp/${server_ip}/6443' 2>/dev/null; then break; fi
+  sleep 10
+done
+
+# COMPRUEBA LA CONECTIVIDAD CON EL SERVIDOR PRINCIPAL ANTES DE INSTALAR K3S.
+timeout 5 bash -c 'echo > /dev/tcp/${server_ip}/6443'
+
+# INSTALA K3S Y UNE EL SERVIDOR AL CLUSTER EXISTENTE.
+# DESHABILITA LOS BALANCEADORES INTEGRADOS Y CONFIGURA SNAPSHOTS DE ETCD CADA 12 HORAS.
+curl -fsSL https://get.k3s.io | \
+  INSTALL_K3S_EXEC='server --server https://${server_ip}:6443 --disable traefik --disable servicelb --write-kubeconfig-mode 600 --etcd-snapshot-schedule-cron "0 */12 * * *" --etcd-snapshot-retention 14' \
+  INSTALL_K3S_VERSION='${k3s_version}' \
+  K3S_TOKEN='${token}' sh -
+
+# VERIFICA QUE EL SERVICIO K3S SE ENCUENTRE ACTIVO.
+systemctl is-active --quiet k3s
+
+# CREA EL SCRIPT QUE SINCRONIZA LOS SNAPSHOTS LOCALES DE ETCD CON S3.
+# SI S3 NO ESTA DISPONIBLE, K3S CONTINUA FUNCIONANDO CON LOS SNAPSHOTS LOCALES.
+cat > /usr/local/sbin/isc-etcd-s3-sync.sh <<'SNAPSYNC'
+#!/bin/bash
+set -euo pipefail
+command -v aws >/dev/null || { echo "AWS CLI ausente" >&2; exit 1; }
+region='${region}'
+bucket='${etcd_bucket}'
+source_dir=/var/lib/rancher/k3s/server/db/snapshots
+[ -d "$source_dir" ] || { echo "Todavia no hay snapshots locales"; exit 0; }
+aws s3 sync "$source_dir/" "s3://$bucket/snapshots/$(hostname)/" --region "$region" --sse AES256 --only-show-errors
+SNAPSYNC
+
+# ESTABLECE PERMISOS DE EJECUCION RESTRINGIDOS PARA EL SCRIPT DE SINCRONIZACION.
+chmod 700 /usr/local/sbin/isc-etcd-s3-sync.sh
+
+# CREA EL SERVICIO SYSTEMD ENCARGADO DE EJECUTAR LA SINCRONIZACION CON S3.
+cat > /etc/systemd/system/isc-etcd-s3-sync.service <<'SNAPSERVICE'
+[Unit]
+Description=Sincronizar snapshots K3s etcd con S3
+After=network-online.target k3s.service
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/isc-etcd-s3-sync.sh
+SNAPSERVICE
+
+# PROGRAMA LA SINCRONIZACION DE SNAPSHOTS CON S3 CADA 12 HORAS.
+cat > /etc/systemd/system/isc-etcd-s3-sync.timer <<'SNAPTIMER'
+[Unit]
+Description=Sincronizacion periodica de snapshots etcd hacia S3
+[Timer]
+OnBootSec=20min
+OnUnitActiveSec=12h
+Persistent=true
+[Install]
+WantedBy=timers.target
+SNAPTIMER
+
+# RECARGA SYSTEMD Y HABILITA EL TEMPORIZADOR DE SINCRONIZACION.
+systemctl daemon-reload
+systemctl enable --now isc-etcd-s3-sync.timer

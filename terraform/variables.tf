@@ -1,4 +1,4 @@
-# CORREO PARA ALERTAS
+# CONFIGURA Y VALIDA EL CORREO DE DESTINO PARA LAS ALERTAS DEL MONITOREO.
 variable "alerta_mail" {
   description = "Correo electronico que recibira las alertas SNS."
   type        = string
@@ -8,56 +8,57 @@ variable "alerta_mail" {
   }
 }
 
-# NOMBRE DEL PROYECTO
+# DEFINE EL NOMBRE UTILIZADO PARA IDENTIFICAR LOS RECURSOS.
 variable "nombre_proyecto" {
   description = "Prefijo usado en los nombres de los recursos."
   type        = string
   default     = "isc-obligatorio"
 }
 
-# REGION
+# DEFINE LA REGIÓN DE AWS PARA EL DESPLIEGUE.
 variable "region" {
   description = "Region de AWS donde se despliega la infraestructura."
   type        = string
   default     = "us-east-1"
 }
 
-# RED
+# DEFINE EL RANGO DE DIRECCIONES IP DE LA VPC.
 variable "cidr_vpc" {
-  description = "Bloque CIDR de la VPC. Las subredes se calculan a partir de este bloque."
+  description = "Bloque ip de la VPC. Las subredes se calculan a partir de este bloque."
   type        = string
-  default     = "10.80.0.0/16"
+  default     = "192.168.0.0/16"
 }
 
-# COMPUTO
+# DEFINE EL TIPO DE INSTANCIA EC2 UTILIZADO POR LOS SERVIDORES K3S.
 variable "tipo_instancia" {
-  description = "Tipo de instancia EC2 de los tres servidores K3s."
+  description = "Tipo de instancia EC2 de  servidores K3s."
   type        = string
   default     = "t3.medium"
 }
 
+# DEFINE LA VERSIÓN DE K3S QUE SE INSTALARÁ EN LOS SERVIDORES.
 variable "version_k3s" {
-  description = "Version de K3s a instalar (ej. v1.37.2+k3s1). Vacio instala la ultima disponible."
+  description = "Version de K3s a instalar. Vacio instala la ultima disponible."
   type        = string
   default     = "v1.37.2+k3s1"
 }
 
-# LOGS Y MONITOREO
+# DEFINE  EL PERÍODO DE CONSERVACIÓN DE LOS REGISTROS EN CLOUDWATCH.
 variable "dias_retencion_logs" {
   description = "Dias de retencion de logs en CloudWatch."
   type        = number
   default     = 14
 }
 
-
+# DEFINE SI SE HABILITA LA RECUPERACIÓN AUTOMÁTICA DE LAS INSTANCIAS EC2.
 variable "habilitar_recuperacion_ec2" {
-  description = "Alarma que recupera automaticamente una instancia ante fallo de hardware (StatusCheckFailed_System)."
+  description = "Alarma que recupera automaticamente una instancia ante fallo."
   type        = bool
   default     = false
 }
 
-# BUCKET DE SNAPSHOTS ETCD
+# DEFINE EL NOMBRE DEL BUCKET S3 PARA LOS RESPALDOS.
 variable "nombre_bucket" {
-  description = "Nombre del bucket S3 para los snapshots de etcd."
+  description = "Nombre del bucket S3 para los snapshots."
   type        = string
 }

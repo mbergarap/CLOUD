@@ -1,5 +1,5 @@
 
-#  BALANCEADOR
+# CONFIGURA EL GRUPO DE SEGURIDAD DEL BALANCEADOR DE CARGA.
 resource "aws_security_group" "alb" {
   name_prefix = "${var.nombre_proyecto}-alb-"
   description = "HTTP publico al ALB"
@@ -16,7 +16,7 @@ resource "aws_vpc_security_group_ingress_rule" "alb_http" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
-# El ALB solo puede hablar con los nodos K3s (referencia al SG, no a un CIDR).
+# PERMITE LA COMUNICACIÓN DEL ALB CON LOS NODOS K3S.
 resource "aws_vpc_security_group_egress_rule" "alb_a_k3s" {
   security_group_id            = aws_security_group.alb.id
   description                  = "NodePort hacia Kubernetes"
@@ -26,7 +26,7 @@ resource "aws_vpc_security_group_egress_rule" "alb_a_k3s" {
   referenced_security_group_id = aws_security_group.k3s.id
 }
 
-#  KUBERNETES
+# CONFIGURA EL GRUPO DE SEGURIDAD DE LOS SERVIDORES K3S.
 resource "aws_security_group" "k3s" {
   name_prefix = "${var.nombre_proyecto}-k3s-"
   description = "Servidores K3s privados"
@@ -43,7 +43,7 @@ resource "aws_vpc_security_group_ingress_rule" "k3s_desde_alb" {
   referenced_security_group_id = aws_security_group.alb.id
 }
 
-# Puertos internos del cluster: solo entre miembros del mismo Security Group.
+# DEFINE LOS PUERTOS DE COMUNICACIÓN INTERNA DEL CLÚSTER K3S.
 locals {
   puertos_k3s = {
     api     = { protocolo = "tcp", inicio = 6443, fin = 6443 }
@@ -53,6 +53,7 @@ locals {
   }
 }
 
+# PERMITE LA COMUNICACIÓN INTERNA ENTRE LOS NODOS K3S.
 resource "aws_vpc_security_group_ingress_rule" "k3s_interno" {
   for_each                     = local.puertos_k3s
   security_group_id            = aws_security_group.k3s.id
@@ -73,6 +74,7 @@ resource "aws_vpc_security_group_egress_rule" "k3s_interno" {
   referenced_security_group_id = aws_security_group.k3s.id
 }
 
+# PERMITE LA SALIDA HTTP Y HTTPS DE LOS SERVIDORES K3S.
 resource "aws_vpc_security_group_egress_rule" "k3s_https" {
   security_group_id = aws_security_group.k3s.id
   description       = "HTTPS: imagenes, K3s, S3, SSM y CloudWatch"
@@ -91,6 +93,7 @@ resource "aws_vpc_security_group_egress_rule" "k3s_http" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
+# PERMITE LAS CONSULTAS DNS DE LOS SERVIDORES K3S.
 resource "aws_vpc_security_group_egress_rule" "k3s_dns_udp" {
   security_group_id = aws_security_group.k3s.id
   description       = "DNS de la VPC (UDP)"
@@ -109,6 +112,7 @@ resource "aws_vpc_security_group_egress_rule" "k3s_dns_tcp" {
   cidr_ipv4         = var.cidr_vpc
 }
 
+# PERMITE LA COMUNICACIÓN DE LOS SERVIDORES K3S CON EFS.
 resource "aws_vpc_security_group_egress_rule" "k3s_nfs" {
   security_group_id            = aws_security_group.k3s.id
   description                  = "NFS hacia EFS"
@@ -118,7 +122,7 @@ resource "aws_vpc_security_group_egress_rule" "k3s_nfs" {
   referenced_security_group_id = aws_security_group.efs.id
 }
 
-#  EFS
+# CONFIGURA EL GRUPO DE SEGURIDAD DEL ALMACENAMIENTO EFS.
 resource "aws_security_group" "efs" {
   name_prefix = "${var.nombre_proyecto}-efs-"
   description = "NFS desde K3s"

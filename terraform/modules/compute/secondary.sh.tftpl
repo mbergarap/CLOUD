@@ -1,12 +1,15 @@
 #!/bin/bash
 set -euo pipefail
+
+# REGISTRA LA INSTALACION DE K3S EN UN ARCHIVO Y EN LOS LOGS DEL SISTEMA.
 exec > >(tee /var/log/isc-k3s-install.log | logger -t isc-k3s -s 2>/dev/console) 2>&1
 
+# INSTALA LAS HERRAMIENTAS NFS Y VERIFICA LA DISPONIBILIDAD DE CURL.
 dnf install -y nfs-utils
 command -v curl >/dev/null
 
-# CloudWatch Agent: logs de instalacion y de pods + metricas de memoria y disco.
-# Es opcional: si falla, no impide la instalacion de K3s.
+# CONFIGURA CLOUDWATCH PARA RECOPILAR LOGS DE INSTALACION, PODS Y METRICAS DEL SERVIDOR.
+# SI LA CONFIGURACION FALLA, PERMITE CONTINUAR CON LA INSTALACION DE K3S.
 (
   dnf install -y amazon-cloudwatch-agent
   cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json <<'CWCFG'
@@ -34,22 +37,57 @@ CWCFG
   /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
 ) || echo "AVISO: CloudWatch Agent no se pudo configurar"
 
+# ESPERA QUE EL SERVIDOR PRINCIPAL DE K3S ESTE DISPONIBLE EN EL PUERTO 6443.
 for i in $(seq 1 120); do
   if timeout 2 bash -c 'echo > /dev/tcp/${server_ip}/6443' 2>/dev/null; then break; fi
   sleep 10
 done
 
+# COMPRUEBA LA CONECTIVIDAD CON EL SERVIDOR PRINCIPAL ANTES DE INSTALAR K3S.
 timeout 5 bash -c 'echo > /dev/tcp/${server_ip}/6443'
 
+# INSTALA K3S Y UNE EL SERVIDOR AL CLUSTER EXISTENTE.
+# DESHABILITA LOS BALANCEADORES INTEGRADOS Y CONFIGURA SNAPSHOTS DE ETCD CADA 12 HORAS.
 curl -fsSL https://get.k3s.io | \
   INSTALL_K3S_EXEC='server --server https://${server_ip}:6443 --disable traefik --disable servicelb --write-kubeconfig-mode 600 --etcd-snapshot-schedule-cron "0 */12 * * *" --etcd-snapshot-retention 14' \
   INSTALL_K3S_VERSION='${k3s_version}' \
   K3S_TOKEN='${token}' sh -
 
+# VERIFICA QUE EL SERVICIO K3S SE ENCUENTRE ACTIVO.
 systemctl is-active --quiet k3s
 
-# La sincronizacion S3 es independiente del arranque de K3s.
-# Si AWS Academy rechaza S3, K3s sigue operativo y conserva snapshots locales.
+# OBTIENE LA ZONA DE DISPONIBILIDAD REAL DESDE AWS IMDSV2.
+IMDS_TOKEN=$(curl -fsS --max-time 10 -X PUT \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
+  http://169.254.169.254/latest/api/token)
+
+AZ=$(curl -fsS --max-time 10 \
+  -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+  http://169.254.169.254/latest/meta-data/placement/availability-zone)
+
+test -n "$AZ"
+
+# ESPERA QUE EL NODO SE REGISTRE EN EL CLUSTER K3S.
+for intento in $(seq 1 60); do
+  if k3s kubectl get node "$(hostname)" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+
+# CONFIGURA LAS ETIQUETAS DE ZONA Y REGION DEL NODO.
+k3s kubectl label node "$(hostname)" \
+  "topology.kubernetes.io/zone=$AZ" \
+  "topology.kubernetes.io/region=${region}" \
+  --overwrite
+
+# CONFIRMA QUE LA ZONA QUEDO CONFIGURADA.
+k3s kubectl get node "$(hostname)" \
+  -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}' |
+  grep -Fx "$AZ"
+
+# CREA EL SCRIPT QUE SINCRONIZA LOS SNAPSHOTS LOCALES DE ETCD CON S3.
+# SI S3 NO ESTA DISPONIBLE, K3S CONTINUA FUNCIONANDO CON LOS SNAPSHOTS LOCALES.
 cat > /usr/local/sbin/isc-etcd-s3-sync.sh <<'SNAPSYNC'
 #!/bin/bash
 set -euo pipefail
@@ -60,7 +98,11 @@ source_dir=/var/lib/rancher/k3s/server/db/snapshots
 [ -d "$source_dir" ] || { echo "Todavia no hay snapshots locales"; exit 0; }
 aws s3 sync "$source_dir/" "s3://$bucket/snapshots/$(hostname)/" --region "$region" --sse AES256 --only-show-errors
 SNAPSYNC
+
+# ESTABLECE PERMISOS DE EJECUCION RESTRINGIDOS PARA EL SCRIPT DE SINCRONIZACION.
 chmod 700 /usr/local/sbin/isc-etcd-s3-sync.sh
+
+# CREA EL SERVICIO SYSTEMD ENCARGADO DE EJECUTAR LA SINCRONIZACION CON S3.
 cat > /etc/systemd/system/isc-etcd-s3-sync.service <<'SNAPSERVICE'
 [Unit]
 Description=Sincronizar snapshots K3s etcd con S3
@@ -70,6 +112,8 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=/usr/local/sbin/isc-etcd-s3-sync.sh
 SNAPSERVICE
+
+# PROGRAMA LA SINCRONIZACION DE SNAPSHOTS CON S3 CADA 12 HORAS.
 cat > /etc/systemd/system/isc-etcd-s3-sync.timer <<'SNAPTIMER'
 [Unit]
 Description=Sincronizacion periodica de snapshots etcd hacia S3
@@ -80,5 +124,8 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 SNAPTIMER
+
+# RECARGA SYSTEMD Y HABILITA EL TEMPORIZADOR DE SINCRONIZACION.
 systemctl daemon-reload
 systemctl enable --now isc-etcd-s3-sync.timer
+

@@ -1,4 +1,4 @@
-# VERSIONES
+# DEFINE LAS VERSIONES DE TERRAFORM 
 terraform {
   required_version = ">= 1.5.0"
   required_providers {
@@ -11,11 +11,10 @@ terraform {
       version = "~> 3.6"
     }
   }
-  # Estado local: Terraform no requiere preparar un bucket S3 previo.
+
 }
 
-# PROVEEDOR AWS
-# default_tags etiqueta todos los recursos que lo soportan.
+# ESTABLECE LA REGIÓN AWS Y LAS ETIQUETAS PREDETERMINADAS DE LOS RECURSOS.
 provider "aws" {
   region = var.region
 

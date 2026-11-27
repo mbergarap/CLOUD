@@ -1,4 +1,4 @@
-# VPC
+# CONFIGURA LA VPC CON SU BLOQUE CIDR Y LOS SERVICIOS DNS HABILITADOS.
 resource "aws_vpc" "main" {
   cidr_block           = var.cidr_vpc
   enable_dns_support   = true
@@ -6,6 +6,7 @@ resource "aws_vpc" "main" {
   tags                 = { Name = "${var.nombre_proyecto}-vpc" }
 }
 
+# OBTIENE TRES ZONAS DE DISPONIBILIDAD DE AWS.
 data "aws_availability_zones" "available" {
   state = "available"
 }
@@ -14,13 +15,13 @@ locals {
   zonas = slice(data.aws_availability_zones.available.names, 0, 3)
 }
 
-# INTERNET GATEWAY
+# CREA Y ASOCIA UN INTERNET GATEWAY A LA VPC.
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
   tags   = { Name = "${var.nombre_proyecto}-igw" }
 }
 
-# SUBREDES PUBLICAS
+# CREA TRES SUBREDES PÚBLICAS EN LA VPC.
 resource "aws_subnet" "public" {
   count                   = 3
   vpc_id                  = aws_vpc.main.id
@@ -30,7 +31,7 @@ resource "aws_subnet" "public" {
   tags                    = { Name = "${var.nombre_proyecto}-publica-${count.index + 1}" }
 }
 
-# SUBREDES PRIVADAS
+# CREA TRES SUBREDES PRIVADAS EN LA VPC.
 resource "aws_subnet" "private" {
   count                   = 3
   vpc_id                  = aws_vpc.main.id
@@ -40,7 +41,7 @@ resource "aws_subnet" "private" {
   tags                    = { Name = "${var.nombre_proyecto}-privada-${count.index + 1}" }
 }
 
-# ELASTIC IP Y NAT GATEWAYS
+# CREA TRES NAT GATEWAYS CON SUS DIRECCIONES IP PÚBLICAS.
 resource "aws_eip" "nat" {
   count  = 3
   domain = "vpc"
@@ -54,7 +55,7 @@ resource "aws_nat_gateway" "nat" {
   tags          = { Name = "${var.nombre_proyecto}-nat-${count.index + 1}" }
 }
 
-# TABLA DE RUTAS PUBLICA
+# CREA UNA TABLA DE RUTAS PÚBLICA Y LA ASOCIA A LAS TRES SUBREDES.
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
   route {
@@ -69,7 +70,7 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# TABLAS DE RUTAS PRIVADAS
+# CONFIGURA LAS TABLAS DE RUTAS DE LAS TRES SUBREDES PRIVADAS.
 resource "aws_route_table" "private" {
   count  = 3
   vpc_id = aws_vpc.main.id

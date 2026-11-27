@@ -1,11 +1,12 @@
-# RED
+
+# CONFIGURA LA VPC, LAS SUBREDES Y EL ENRUTAMIENTO DE LA RED.
 module "network" {
   source          = "./modules/network"
   nombre_proyecto = var.nombre_proyecto
   cidr_vpc        = var.cidr_vpc
 }
 
-# SEGURIDAD
+# CONFIGURA LOS GRUPOS DE SEGURIDAD DE LA INFRAESTRUCTURA.
 module "security" {
   source          = "./modules/security"
   nombre_proyecto = var.nombre_proyecto
@@ -13,7 +14,7 @@ module "security" {
   cidr_vpc        = var.cidr_vpc
 }
 
-# ALMACENAMIENTO
+# CONFIGURA EL ALMACENAMIENTO COMPARTIDO EFS Y LOS RESPALDOS DE ETCD EN S3.
 module "storage" {
   source          = "./modules/storage"
   nombre_proyecto = var.nombre_proyecto
@@ -22,14 +23,14 @@ module "storage" {
   nombre_bucket   = var.nombre_bucket
 }
 
-# LOGS CENTRALIZADOS
+# CENTRALIZA LOS REGISTROS DE LA INFRAESTRUCTURA PARA FACILITAR SU MONITOREO.
 module "logging" {
   source          = "./modules/logging"
   nombre_proyecto = var.nombre_proyecto
   dias_retencion  = var.dias_retencion_logs
 }
 
-# COMPUTO
+# DESPLIEGA LOS SERVIDORES K3S Y EL BALANCEADOR DE CARGA.
 module "compute" {
   source          = "./modules/compute"
   nombre_proyecto = var.nombre_proyecto
@@ -44,11 +45,19 @@ module "compute" {
   etcd_bucket     = module.storage.etcd_bucket
   log_group       = module.logging.log_group_name
 
-  # La ruta NAT, EFS y los logs deben existir antes de arrancar los servidores.
-  depends_on = [module.network, module.storage, module.logging, terraform_data.bucket_etcd]
+  # ENTREGA EL MANIFIESTO COMPRIMIDO DE ONLINE BOUTIQUE Y EL IDENTIFICADOR DE EFS.
+  manifest_b64gzip = base64gzip(file("${path.module}/../kubernetes/app.yaml"))
+  efs_id           = module.storage.efs_id
+
+  # GARANTIZA QUE LA RED, EL ALMACENAMIENTO Y LOS LOGS ESTEN CONFIGURADOS ANTES DE CREAR K3S.
+  depends_on = [
+    module.network,
+    module.storage,
+    module.logging
+  ]
 }
 
-# MONITOREO
+# CONFIGURA LAS METRICAS, ALARMAS Y NOTIFICACIONES DE CLOUDWATCH Y SNS.
 module "monitoring" {
   source                     = "./modules/monitoring"
   nombre_proyecto            = var.nombre_proyecto

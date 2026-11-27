@@ -1,14 +1,18 @@
 #!/bin/bash
 set -euo pipefail
+
+# REGISTRA LA INSTALACION DEL SERVIDOR K3S EN UN ARCHIVO DE LOGS.
 exec > >(tee /var/log/isc-k3s-install.log | logger -t isc-k3s -s 2>/dev/console) 2>&1
 
-dnf install -y nfs-utils
+# INSTALA LAS HERRAMIENTAS NECESARIAS PARA K3S, EFS Y ONLINE BOUTIQUE.
+dnf install -y nfs-utils gzip
 command -v curl >/dev/null
+command -v aws >/dev/null
 
-# CloudWatch Agent: logs de instalacion y de pods + metricas de memoria y disco.
-# Es opcional: si falla, no impide la instalacion de K3s.
+# CONFIGURA CLOUDWATCH PARA RECOPILAR LOGS Y METRICAS DEL SERVIDOR.
 (
   dnf install -y amazon-cloudwatch-agent
+
   cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json <<'CWCFG'
 {
   "agent": { "metrics_collection_interval": 60, "run_as_user": "root" },
@@ -31,47 +35,234 @@ command -v curl >/dev/null
   }
 }
 CWCFG
-  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
-) || echo "AVISO: CloudWatch Agent no se pudo configurar"
 
+  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -s \
+    -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
+
+) || echo "AVISO: CLOUDWATCH AGENT NO SE PUDO CONFIGURAR."
+
+# INSTALA K3S Y CONFIGURA EL SERVIDOR PRINCIPAL DEL CLUSTER.
 curl -fsSL https://get.k3s.io | \
   INSTALL_K3S_EXEC='server --cluster-init --disable traefik --disable servicelb --write-kubeconfig-mode 600 --etcd-snapshot-schedule-cron "0 */12 * * *" --etcd-snapshot-retention 14' \
   INSTALL_K3S_VERSION='${k3s_version}' \
   K3S_TOKEN='${token}' sh -
 
+# VERIFICA QUE EL SERVICIO K3S ESTE ACTIVO.
 systemctl is-active --quiet k3s
 
-# La sincronizacion S3 es independiente del arranque de K3s.
-# Si AWS Academy rechaza S3, K3s sigue operativo y conserva snapshots locales.
+# OBTIENE LA ZONA DE DISPONIBILIDAD REAL DESDE AWS IMDSV2.
+IMDS_TOKEN=$(curl -fsS --max-time 10 -X PUT \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" \
+  http://169.254.169.254/latest/api/token)
+
+AZ=$(curl -fsS --max-time 10 \
+  -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" \
+  http://169.254.169.254/latest/meta-data/placement/availability-zone)
+
+test -n "$AZ"
+
+# ESPERA QUE EL NODO SE REGISTRE EN EL CLUSTER K3S.
+for intento in $(seq 1 60); do
+  if k3s kubectl get node "$(hostname)" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 2
+done
+
+# CONFIGURA LAS ETIQUETAS DE ZONA Y REGION DEL NODO.
+k3s kubectl label node "$(hostname)" \
+  "topology.kubernetes.io/zone=$AZ" \
+  "topology.kubernetes.io/region=${region}" \
+  --overwrite
+
+# CONFIRMA QUE LA ZONA QUEDO CONFIGURADA.
+k3s kubectl get node "$(hostname)" \
+  -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}' |
+  grep -Fx "$AZ"
+
+# ESPERA HASTA QUE LA API DE KUBERNETES ESTE DISPONIBLE.
+API_DISPONIBLE=0
+
+for intento in $(seq 1 60); do
+  if kubectl get --raw=/readyz >/dev/null 2>&1; then
+    API_DISPONIBLE=1
+    break
+  fi
+
+  sleep 5
+done
+
+if [ "$API_DISPONIBLE" -ne 1 ]; then
+  echo "ERROR: LA API DE KUBERNETES NO ESTA DISPONIBLE."
+  exit 1
+fi
+
+# RECUPERA EL MANIFIESTO COMPRIMIDO DE ONLINE BOUTIQUE.
+mkdir -p /opt/isc-online-boutique
+
+printf '%s' '${manifest_b64gzip}' |
+  base64 --decode |
+  gzip --decompress \
+  > /opt/isc-online-boutique/app.yaml
+
+# CONFIGURA LA DIRECCION DNS DE EFS PARA EL ALMACENAMIENTO DE REDIS.
+sed -i \
+  's|EFS_SERVER_PLACEHOLDER|${efs_id}.efs.${region}.amazonaws.com|g' \
+  /opt/isc-online-boutique/app.yaml
+
+# VERIFICA QUE LA CONFIGURACION DE EFS ESTE COMPLETA.
+if grep -q 'EFS_SERVER_PLACEHOLDER' /opt/isc-online-boutique/app.yaml; then
+  echo "ERROR: NO SE PUDO CONFIGURAR LA DIRECCION DE EFS."
+  exit 1
+fi
+
+# DESPLIEGA LOS MANIFIESTOS DE ONLINE BOUTIQUE EN KUBERNETES.
+kubectl apply -f /opt/isc-online-boutique/app.yaml
+
+# DEFINE LA REGION Y EL BUCKET PARA ALMACENAR LOS SNAPSHOTS DE ETCD.
+REGION='${region}'
+BUCKET='${etcd_bucket}'
+
+# VERIFICA EL ACCESO A AWS UTILIZANDO EL ROL IAM DE LA INSTANCIA.
+aws sts get-caller-identity --region "$REGION" >/dev/null
+
+# COMPRUEBA SI EL BUCKET YA EXISTE EN LA CUENTA AWS.
+BUCKETS=$(aws s3api list-buckets \
+  --query "Buckets[].Name" \
+  --output text \
+  --region "$REGION")
+
+# CREA EL BUCKET S3 CUANDO NO EXISTE EN LA CUENTA.
+if ! printf '%s\n' "$BUCKETS" | tr '\t' '\n' | grep -Fxq "$BUCKET"; then
+  if [ "$REGION" = "us-east-1" ]; then
+    aws s3api create-bucket \
+      --bucket "$BUCKET" \
+      --region "$REGION"
+  else
+    aws s3api create-bucket \
+      --bucket "$BUCKET" \
+      --region "$REGION" \
+      --create-bucket-configuration "LocationConstraint=$REGION"
+  fi
+fi
+
+# BLOQUEA EL ACCESO PUBLICO AL BUCKET PARA PROTEGER LOS SNAPSHOTS.
+aws s3api put-public-access-block \
+  --bucket "$BUCKET" \
+  --region "$REGION" \
+  --public-access-block-configuration \
+  'BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true'
+
+# CONFIGURA EL CIFRADO AES256 PARA LOS OBJETOS ALMACENADOS EN S3.
+aws s3api put-bucket-encryption \
+  --bucket "$BUCKET" \
+  --region "$REGION" \
+  --server-side-encryption-configuration \
+  '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+
+# CONFIGURA LA ELIMINACION DE SNAPSHOTS DESPUES DE SIETE DIAS.
+aws s3api put-bucket-lifecycle-configuration \
+  --bucket "$BUCKET" \
+  --region "$REGION" \
+  --lifecycle-configuration \
+  '{"Rules":[{"ID":"retencion-etcd","Status":"Enabled","Filter":{"Prefix":"snapshots/"},"Expiration":{"Days":7}}]}'
+
+# CREA EL SCRIPT DE SINCRONIZACION DE SNAPSHOTS DE ETCD HACIA S3.
 cat > /usr/local/sbin/isc-etcd-s3-sync.sh <<'SNAPSYNC'
 #!/bin/bash
 set -euo pipefail
-command -v aws >/dev/null || { echo "AWS CLI ausente" >&2; exit 1; }
+
+# COMPRUEBA QUE AWS CLI ESTE DISPONIBLE PARA SINCRONIZAR LOS RESPALDOS.
+command -v aws >/dev/null || {
+  echo "ERROR: AWS CLI NO ESTA DISPONIBLE." >&2
+  exit 1
+}
+
+# DEFINE EL BUCKET Y EL DIRECTORIO DE LOS SNAPSHOTS LOCALES.
 region='${region}'
 bucket='${etcd_bucket}'
 source_dir=/var/lib/rancher/k3s/server/db/snapshots
-[ -d "$source_dir" ] || { echo "Todavia no hay snapshots locales"; exit 0; }
-aws s3 sync "$source_dir/" "s3://$bucket/snapshots/$(hostname)/" --region "$region" --sse AES256 --only-show-errors
+
+# EVITA SINCRONIZAR CUANDO TODAVIA NO EXISTEN SNAPSHOTS LOCALES.
+if [ ! -d "$source_dir" ]; then
+  echo "TODAVIA NO HAY SNAPSHOTS LOCALES."
+  exit 0
+fi
+
+# SINCRONIZA LOS SNAPSHOTS CON S3 UTILIZANDO CIFRADO AES256.
+aws s3 sync \
+  "$source_dir/" \
+  "s3://$bucket/snapshots/$(hostname)/" \
+  --region "$region" \
+  --sse AES256 \
+  --only-show-errors
 SNAPSYNC
+
 chmod 700 /usr/local/sbin/isc-etcd-s3-sync.sh
+
+# CONFIGURA EL SERVICIO SYSTEMD PARA SINCRONIZAR LOS RESPALDOS.
 cat > /etc/systemd/system/isc-etcd-s3-sync.service <<'SNAPSERVICE'
 [Unit]
 Description=Sincronizar snapshots K3s etcd con S3
 After=network-online.target k3s.service
 Wants=network-online.target
+
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/isc-etcd-s3-sync.sh
 SNAPSERVICE
+
+# PROGRAMA LA SINCRONIZACION PERIODICA DE ETCD HACIA S3.
 cat > /etc/systemd/system/isc-etcd-s3-sync.timer <<'SNAPTIMER'
 [Unit]
 Description=Sincronizacion periodica de snapshots etcd hacia S3
+
 [Timer]
 OnBootSec=20min
 OnUnitActiveSec=12h
 Persistent=true
+
 [Install]
 WantedBy=timers.target
 SNAPTIMER
+
+# HABILITA EL TEMPORIZADOR DE SINCRONIZACION DE ETCD.
 systemctl daemon-reload
 systemctl enable --now isc-etcd-s3-sync.timer
+
+# ESPERA HASTA QUE LOS TRES SERVIDORES K3S ESTEN LISTOS.
+NODOS_LISTOS=0
+
+for intento in $(seq 1 120); do
+  LISTOS=$(kubectl get nodes --no-headers 2>/dev/null |
+    awk '$2 == "Ready" { count++ } END { print count+0 }')
+
+  if [ "$LISTOS" -eq 3 ]; then
+    NODOS_LISTOS=1
+    break
+  fi
+
+  sleep 10
+done
+
+if [ "$NODOS_LISTOS" -ne 1 ]; then
+  echo "ERROR: NO SE ENCUENTRAN LOS TRES NODOS K3S LISTOS."
+  exit 1
+fi
+
+# ESPERA A QUE LOS DESPLIEGUES DE ONLINE BOUTIQUE ESTEN DISPONIBLES.
+kubectl get deployments -o name |
+while IFS= read -r deployment; do
+  kubectl rollout status "$deployment" --timeout=600s
+done
+
+# MUESTRA EL ESTADO FINAL DE LOS NODOS Y LOS COMPONENTES KUBERNETES.
+kubectl get nodes -o wide
+kubectl get pods -A
+kubectl get services
+
+# CONFIRMA QUE LA INICIALIZACION DEL SERVIDOR TERMINO CORRECTAMENTE.
+echo "K3S, ONLINE BOUTIQUE Y RESPALDOS S3 CONFIGURADOS."

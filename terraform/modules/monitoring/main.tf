@@ -1,4 +1,7 @@
-# ---------------------------------------------------------------- ALERTAS SNS
+
+# ALERTAS SNS
+# CREA EL TEMA DE NOTIFICACIONES Y SUSCRIBE EL CORREO ELECTRONICO PARA RECIBIR ALERTAS.
+
 resource "aws_sns_topic" "alertas" {
   name = "${var.nombre_proyecto}-alertas"
 }
@@ -9,6 +12,7 @@ resource "aws_sns_topic_subscription" "correo" {
   endpoint  = var.alerta_mail
 }
 
+# DEFINE LAS DIMENSIONES DEL ALB Y LAS ACCIONES DE NOTIFICACION.
 locals {
   dim_alb = {
     LoadBalancer = var.alb_arn_suffix
@@ -17,8 +21,9 @@ locals {
   acciones = [aws_sns_topic.alertas.arn]
 }
 
-# ---------------------------------------------------------------- INSTANCIAS
-# CPU elevada
+# MONITOREO DE INSTANCIAS EC2
+
+# GENERA UNA ALERTA CUANDO LA CPU SUPERA EL 80 % DURANTE 10 MINUTOS.
 resource "aws_cloudwatch_metric_alarm" "cpu" {
   count               = 3
   alarm_name          = "${var.nombre_proyecto}-cpu-${count.index + 1}"
@@ -35,7 +40,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu" {
   alarm_actions       = local.acciones
 }
 
-# Memoria elevada (metrica publicada por el CloudWatch Agent)
+# GENERA UNA ALERTA CUANDO EL USO DE MEMORIA SUPERA EL 85 % DURANTE 10 MINUTOS.
 resource "aws_cloudwatch_metric_alarm" "memoria" {
   count               = 3
   alarm_name          = "${var.nombre_proyecto}-memoria-${count.index + 1}"
@@ -52,7 +57,7 @@ resource "aws_cloudwatch_metric_alarm" "memoria" {
   alarm_actions       = local.acciones
 }
 
-# Disco casi lleno (metrica publicada por el CloudWatch Agent)
+# GENERA UNA ALERTA CUANDO EL USO DEL DISCO RAIZ SUPERA EL 85 %.
 resource "aws_cloudwatch_metric_alarm" "disco" {
   count               = 3
   alarm_name          = "${var.nombre_proyecto}-disco-${count.index + 1}"
@@ -74,7 +79,7 @@ resource "aws_cloudwatch_metric_alarm" "disco" {
   alarm_actions      = local.acciones
 }
 
-# Fallo del sistema subyacente: avisa y recupera la instancia (misma EBS, misma IP).
+# DETECTA FALLOS DEL HOST Y HABILITA LA RECUPERACION AUTOMATICA DE EC2 CUANDO CORRESPONDE.
 resource "aws_cloudwatch_metric_alarm" "recuperacion" {
   count               = 3
   alarm_name          = "${var.nombre_proyecto}-recuperacion-${count.index + 1}"
@@ -93,8 +98,9 @@ resource "aws_cloudwatch_metric_alarm" "recuperacion" {
   ) : local.acciones
 }
 
-# ---------------------------------------------------------------- BALANCEADOR
-# Destinos sin salud
+# MONITOREO DEL BALANCEADOR ALB
+
+# GENERA UNA ALERTA CUANDO EL ALB DETECTA DESTINOS SIN SALUD.
 resource "aws_cloudwatch_metric_alarm" "targets" {
   alarm_name          = "${var.nombre_proyecto}-targets-inactivos"
   alarm_description   = "Hay targets del ALB sin salud"
@@ -110,7 +116,7 @@ resource "aws_cloudwatch_metric_alarm" "targets" {
   alarm_actions       = local.acciones
 }
 
-# Menos de dos destinos sanos: se pierde la redundancia
+# GENERA UNA ALERTA CUANDO HAY MENOS DE DOS DESTINOS SANOS Y SE PIERDE LA REDUNDANCIA.
 resource "aws_cloudwatch_metric_alarm" "targets_sanos" {
   alarm_name          = "${var.nombre_proyecto}-targets-sanos-bajos"
   alarm_description   = "Menos de 2 targets sanos: sin redundancia"
@@ -126,7 +132,7 @@ resource "aws_cloudwatch_metric_alarm" "targets_sanos" {
   alarm_actions       = local.acciones
 }
 
-# Errores 5xx generados por la aplicacion
+# GENERA UNA ALERTA CUANDO LA APLICACION DEVUELVE MAS DE 10 ERRORES 5XX EN 5 MINUTOS.
 resource "aws_cloudwatch_metric_alarm" "errores_5xx_destino" {
   alarm_name          = "${var.nombre_proyecto}-5xx-aplicacion"
   alarm_description   = "Mas de 10 respuestas 5xx de la aplicacion en 5 minutos"
@@ -142,7 +148,7 @@ resource "aws_cloudwatch_metric_alarm" "errores_5xx_destino" {
   alarm_actions       = local.acciones
 }
 
-# Errores 5xx generados por el propio ALB (por ejemplo, sin destinos)
+# GENERA UNA ALERTA CUANDO EL PROPIO ALB DEVUELVE MAS DE 5 ERRORES 5XX EN 5 MINUTOS.
 resource "aws_cloudwatch_metric_alarm" "errores_5xx_alb" {
   alarm_name          = "${var.nombre_proyecto}-5xx-balanceador"
   alarm_description   = "El ALB devuelve 5xx (502/503/504)"
@@ -158,7 +164,7 @@ resource "aws_cloudwatch_metric_alarm" "errores_5xx_alb" {
   alarm_actions       = local.acciones
 }
 
-# Latencia
+# GENERA UNA ALERTA CUANDO EL PERCENTIL 95 DE LATENCIA SUPERA LOS 2 SEGUNDOS.
 resource "aws_cloudwatch_metric_alarm" "latencia" {
   alarm_name          = "${var.nombre_proyecto}-latencia-p95"
   alarm_description   = "Percentil 95 del tiempo de respuesta superior a 2 segundos"
@@ -174,7 +180,9 @@ resource "aws_cloudwatch_metric_alarm" "latencia" {
   alarm_actions       = local.acciones
 }
 
-# ---------------------------------------------------------------- DASHBOARD
+# DASHBOARD DE CLOUDWATCH
+# CREA UN PANEL PARA VISUALIZAR METRICAS DEL ALB, INSTANCIAS EC2 Y LOGS DE K3S.
+
 resource "aws_cloudwatch_dashboard" "principal" {
   dashboard_name = "${var.nombre_proyecto}-panel"
 

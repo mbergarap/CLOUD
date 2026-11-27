@@ -1,5 +1,5 @@
 
-# IMAGEN DEL SISTEMA OPERATIVO
+# OBTIENE LA IMAGEN AMAZON LINUX 2023 PARA LOS SERVIDORES EC2.
 data "aws_ami" "al2023" {
   most_recent = true
   owners      = ["amazon"]
@@ -20,12 +20,13 @@ data "aws_ami" "al2023" {
   }
 }
 
+# GENERA UN TOKEN ALEATORIO PARA LA AUTENTICACIÓN DEL CLÚSTER K3S.
 resource "random_password" "k3s_token" {
   length  = 40
   special = false
 }
 
-# SERVIDORES KUBERNETES
+# CREA EL SERVIDOR PRINCIPAL DEL CLÚSTER K3S.
 resource "aws_instance" "primary" {
   ami                         = data.aws_ami.al2023.id
   instance_type               = var.tipo_instancia
@@ -34,12 +35,15 @@ resource "aws_instance" "primary" {
   vpc_security_group_ids      = [var.k3s_sg_id]
   iam_instance_profile        = "LabInstanceProfile"
 
+  # ENTREGA AL SERVIDOR PRINCIPAL LOS DATOS NECESARIOS PARA INSTALAR K3S Y ONLINE BOUTIQUE.
   user_data = templatefile("${path.module}/primary.sh.tftpl", {
-    token       = random_password.k3s_token.result
-    etcd_bucket = var.etcd_bucket
-    region      = var.region
-    k3s_version = var.version_k3s
-    log_group   = var.log_group
+    token            = random_password.k3s_token.result
+    etcd_bucket      = var.etcd_bucket
+    region           = var.region
+    k3s_version      = var.version_k3s
+    log_group        = var.log_group
+    manifest_b64gzip = var.manifest_b64gzip
+    efs_id           = var.efs_id
   })
 
   metadata_options {
@@ -62,6 +66,7 @@ resource "aws_instance" "primary" {
   }
 }
 
+# CREA DOS SERVIDORES SECUNDARIOS PARA EL CLÚSTER K3S.
 resource "aws_instance" "secondary" {
   count                       = 2
   ami                         = data.aws_ami.al2023.id
@@ -100,17 +105,16 @@ resource "aws_instance" "secondary" {
   }
 }
 
-# BALANCEADOR
+# CREA EL BALANCEADOR DE CARGA PÚBLICO DE ONLINE BOUTIQUE.
 resource "aws_lb" "alb" {
   name               = "${var.nombre_proyecto}-alb"
   internal           = false
   load_balancer_type = "application"
   subnets            = var.public_subnets
   security_groups    = [var.alb_sg_id]
-
 }
 
-# GRUPO DE DESTINOS
+# CONFIGURA EL GRUPO DE DESTINOS DEL ALB PARA LOS SERVIDORES K3S.
 resource "aws_lb_target_group" "web" {
   name        = "${var.nombre_proyecto}-web"
   port        = 30080
@@ -128,12 +132,14 @@ resource "aws_lb_target_group" "web" {
   }
 }
 
+# ASOCIA EL SERVIDOR PRINCIPAL AL GRUPO DE DESTINOS DEL ALB.
 resource "aws_lb_target_group_attachment" "primary" {
   target_group_arn = aws_lb_target_group.web.arn
   target_id        = aws_instance.primary.id
   port             = 30080
 }
 
+# ASOCIA LOS DOS SERVIDORES SECUNDARIOS AL GRUPO DE DESTINOS DEL ALB.
 resource "aws_lb_target_group_attachment" "secondary" {
   count            = 2
   target_group_arn = aws_lb_target_group.web.arn
@@ -141,7 +147,7 @@ resource "aws_lb_target_group_attachment" "secondary" {
   port             = 30080
 }
 
-# LISTENER HTTP
+# CONFIGURA EL LISTENER HTTP DEL ALB PARA DISTRIBUIR LAS SOLICITUDES.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.alb.arn
   port              = 80

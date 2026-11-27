@@ -1,17 +1,17 @@
-# NOMBRE DEL PROYECTO
+## DEFINE EL NOMBRE DEL PROYECTO PARA LOS RECURSOS DE SEGURIDAD.
 variable "nombre_proyecto" {
   description = "Prefijo usado en los nombres de los recursos."
   type        = string
 }
 
-# VPC
+# RECIBE EL IDENTIFICADOR DE LA VPC.
 variable "vpc_id" {
   description = "Identificador de la VPC."
   type        = string
 }
 
-# CIDR DE LA VPC (solo para el DNS interno)
+# DEFINE EL RANGO DE DIRECCIONES IP DE LA VPC.
 variable "cidr_vpc" {
-  description = "Bloque CIDR de la VPC."
+  description = "Bloque IP de la VPC."
   type        = string
 }

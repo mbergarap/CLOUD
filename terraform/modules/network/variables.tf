@@ -1,11 +1,11 @@
-# NOMBRE DEL PROYECTO
+# DEFINE EL NOMBRE DEL PROYECTO PARA LOS RECURSOS DE RED.
 variable "nombre_proyecto" {
   description = "Prefijo usado en los nombres de los recursos."
   type        = string
 }
 
-# CIDR DE LA VPC
+# DEFINE EL RANGO DE DIRECCIONES IP DE LA VPC.
 variable "cidr_vpc" {
-  description = "Bloque CIDR de la VPC."
+  description = "Bloque IP de la VPC."
   type        = string
 }
