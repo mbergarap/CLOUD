@@ -6,7 +6,7 @@ Las horas de los paneles de CloudWatch se muestran en UTC; las de los scripts de
 
 ## Verificaciones del despliegue
 
-El despliegue (`desplegar.ps1` y el script de finalización por SSM) comprueba: 3 EC2 en SSM, 3 nodos `Ready`, microservicios disponibles, Redis `PONG` con AOF, PVC enlazado, HPA/PDB creados, 17 alarmas, grupo de logs, dashboard, plan de AWS Backup, suscripción SNS, ≥ 2 targets sanos y HTTP 200.
+El despliegue se hace solo con `terraform apply`. La asociación de SSM (`terraform/automatizacion.tf`) espera en el servidor principal hasta que K3s y la tienda estén listos: `cloud-init` terminado, 3 nodos `Ready`, frontend con 2 réplicas y HTTP 200 por el ALB. Además se comprobó a mano: 3 EC2 en SSM, 3 nodos `Ready`, microservicios disponibles, Redis `PONG` con AOF, PVC enlazado, HPA/PDB creados, 17 alarmas, grupo de logs, dashboard, plan de AWS Backup, suscripción SNS, ≥ 2 targets sanos y HTTP 200.
 
 Resultado: despliegue completo, 3 nodos `Ready`, 3 targets sanos y HTTP 200 en el ALB.
 
@@ -123,11 +123,40 @@ Con 2 réplicas y un PodDisruptionBudget (`minAvailable: 1`), siempre hay al men
 | Llegan logs al grupo de CloudWatch `/isc-obligatorio/k3s` | Sí: streams `<instancia>/pods` y `<instancia>/instalacion` con eventos recientes en las tres instancias |
 | Llegan métricas de memoria (`CWAgent`) y las alarmas de memoria/disco salen de «sin datos» | Sí: el namespace `CWAgent` publica `mem_used_percent` y `disk_used_percent`; las alarmas `memoria-*` y `disco-*` pasaron de «sin datos» a `OK` a los pocos minutos del despliegue |
 
+## 5. Despliegue desde cero con `terraform apply`
+
+Se probó en una cuenta de AWS Academy vacía (sin instancias, balanceadores ni buckets), solo con `terraform apply` y sin ningún script ni paso manual. Se hizo en tres intentos y cada fallo llevó a una corrección.
+
+| Intento | Resultado | Causa y corrección |
+|---|---|---|
+| 1 | Una instancia no pudo descargar K3s y su arranque falló; la tienda no se desplegó sola | La descarga se hacía una sola vez. Ahora `primary.sh.tftpl` y `secondary.sh.tftpl` reintentan hasta 8 veces |
+| 2 | El servidor principal abortó antes de desplegar la tienda; `terraform apply` terminó con error en `aws_ssm_association.verificar_kubernetes` | `BucketAlreadyExists`: el nombre del bucket de etcd ya lo usaba otra cuenta de AWS (los nombres de bucket son únicos en todo AWS). Con la verificación SSM se vio `cloud-init status: error`. Ahora el paso del bucket va al final, con la tienda ya desplegada |
+| 3 | Correcto, sin intervención | Con un `nombre_bucket` único |
+
+Resultado del intento correcto (83 recursos creados, 0 errores; antes se habían destruido 83 con `terraform destroy`, sin que la vault de AWS Backup bloqueara el borrado):
+
+| Dato | Resultado |
+|---|---|
+| Nodos K3s | 3 `Ready`, uno por zona |
+| Pods | 21 `Running` y `1/1`; cada servicio con sus 2 réplicas en nodos distintos |
+| Reinicios | Un reinicio de cada frontend durante el arranque, porque su liveness consulta `/` y esa página necesita a `currencyservice`; después estable |
+| Targets del ALB | 3 `healthy` |
+| HTTP por el ALB | 200 |
+| Verificación SSM | `Success`, tardó unos 3 minutos (13:15:53 a 13:18:46) y terminó con «K3S Y ONLINE BOUTIQUE DISPONIBLES. HTTP 200» |
+| Suscripción SNS | Confirmada por correo |
+
+**Limitación observada.** `terraform apply` dio `Apply complete!` unos 2 o 3 minutos antes de que terminara el script de verificación, así que durante ese tiempo el ALB respondió 502 mientras arrancaban los pods. La tienda quedó disponible sola unos minutos después. Se debe esperar a que el ALB responda HTTP 200 antes de usar la URL.
+
+**Requisito.** `nombre_bucket` debe ser único en todo AWS; si ya existe en otra cuenta, el respaldo de etcd a S3 no se configura (la tienda sí queda desplegada).
+
 ## Resumen de hallazgos
 
 | Hallazgo | Impacto | Estado |
 |---|---|---|
 | Liveness del frontend no detectaba la página colgada | Sitio caído tras perder un nodo | Corregido en `kubernetes/app.yaml` |
-| Microservicios concentrados en un solo nodo | Un nodo caído tira casi toda la tienda | Rebalanceado; falta que `desplegar.ps1` espere a los 3 nodos antes de aplicar `app.yaml` |
+| Microservicios concentrados en un solo nodo | Un nodo caído tira casi toda la tienda | Corregido: `primary.sh.tftpl` espera a los 3 nodos y a sus etiquetas de zona antes de aplicar `app.yaml` (verificado en el despliegue desde cero, sección 5) |
 | La alarma de targets no avisaba al perder un nodo | Caída de un nodo sin notificación | Corregido: umbral `< 3` en `targets-sanos-bajos`, verificado con correo real |
 | Corte de hasta 90 s al caer un nodo | Errores visibles breves (3 de 44 consultas en la última prueba) | Documentado; mejorable ajustando el health check |
+| La descarga de K3s fallaba una vez y dejaba un nodo sin cluster | Despliegue desde cero incompleto | Corregido: hasta 8 reintentos en el arranque |
+| Un `nombre_bucket` ya usado en otra cuenta abortaba el arranque antes de desplegar la tienda | Tienda sin desplegar | Corregido: el paso del bucket se hace al final |
+| `terraform apply` termina unos minutos antes de que la tienda responda | 502 breve tras el apply | Documentado; esperar a HTTP 200 |
