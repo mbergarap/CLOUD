@@ -132,6 +132,65 @@ if grep -q 'EFS_SERVER_PLACEHOLDER' /opt/isc-online-boutique/app.yaml; then
   exit 1
 fi
 
+# ESPERA HASTA QUE LOS TRES SERVIDORES K3S ESTEN LISTOS.
+NODOS_LISTOS=0
+
+for intento in $(seq 1 120); do
+  LISTOS=$(kubectl get nodes --no-headers 2>/dev/null |
+    awk '$2 == "Ready" { count++ } END { print count+0 }')
+
+  if [ "$LISTOS" -eq 3 ]; then
+    NODOS_LISTOS=1
+    break
+  fi
+
+  sleep 10
+done
+
+if [ "$NODOS_LISTOS" -ne 1 ]; then
+  echo "ERROR: NO SE ENCUENTRAN LOS TRES NODOS K3S LISTOS."
+  exit 1
+fi
+
+# ESPERA A QUE LOS TRES NODOS TENGAN SU ETIQUETA DE ZONA. SIN ESTO, KUBERNETES
+# CONCENTRARIA LAS REPLICAS EN EL PRIMER NODO AL APLICAR LA APLICACION.
+ZONAS_LISTAS=0
+
+for intento in $(seq 1 60); do
+  ZONAS=$(kubectl get nodes \
+    -o jsonpath='{range .items[*]}{.metadata.labels.topology\.kubernetes\.io/zone}{"\n"}{end}' |
+    sed '/^$/d' | sort -u | wc -l)
+
+  if [ "$ZONAS" -eq 3 ]; then
+    ZONAS_LISTAS=1
+    break
+  fi
+
+  sleep 5
+done
+
+if [ "$ZONAS_LISTAS" -ne 1 ]; then
+  echo "ERROR: LOS TRES NODOS NO TIENEN ETIQUETA DE ZONA."
+  exit 1
+fi
+
+# DESPLIEGA LOS MANIFIESTOS DE ONLINE BOUTIQUE CON LOS TRES NODOS Y ZONAS LISTOS.
+kubectl apply -f /opt/isc-online-boutique/app.yaml
+
+# ESPERA A QUE LOS DESPLIEGUES DE ONLINE BOUTIQUE ESTEN DISPONIBLES.
+kubectl get deployments -o name |
+while IFS= read -r deployment; do
+  kubectl rollout status "$deployment" --timeout=600s
+done
+
+# MUESTRA EL ESTADO FINAL DE LOS NODOS Y LOS COMPONENTES KUBERNETES.
+kubectl get nodes -o wide
+kubectl get pods -A
+kubectl get services
+
+# CONFIGURA LOS RESPALDOS DE ETCD EN S3 AL FINAL, CON LA TIENDA YA DESPLEGADA.
+# EL NOMBRE DE UN BUCKET ES UNICO EN TODO AWS: SI YA LO USA OTRA CUENTA, ESTE PASO
+# FALLA, PERO LA TIENDA YA ESTA EN MARCHA Y EL ERROR QUEDA VISIBLE EN LA VERIFICACION.
 # DEFINE LA REGION Y EL BUCKET PARA ALMACENAR LOS SNAPSHOTS DE ETCD.
 REGION='${region}'
 BUCKET='${etcd_bucket}'
@@ -242,62 +301,6 @@ SNAPTIMER
 # HABILITA EL TEMPORIZADOR DE SINCRONIZACION DE ETCD.
 systemctl daemon-reload
 systemctl enable --now isc-etcd-s3-sync.timer
-
-# ESPERA HASTA QUE LOS TRES SERVIDORES K3S ESTEN LISTOS.
-NODOS_LISTOS=0
-
-for intento in $(seq 1 120); do
-  LISTOS=$(kubectl get nodes --no-headers 2>/dev/null |
-    awk '$2 == "Ready" { count++ } END { print count+0 }')
-
-  if [ "$LISTOS" -eq 3 ]; then
-    NODOS_LISTOS=1
-    break
-  fi
-
-  sleep 10
-done
-
-if [ "$NODOS_LISTOS" -ne 1 ]; then
-  echo "ERROR: NO SE ENCUENTRAN LOS TRES NODOS K3S LISTOS."
-  exit 1
-fi
-
-# ESPERA A QUE LOS TRES NODOS TENGAN SU ETIQUETA DE ZONA. SIN ESTO, KUBERNETES
-# CONCENTRARIA LAS REPLICAS EN EL PRIMER NODO AL APLICAR LA APLICACION.
-ZONAS_LISTAS=0
-
-for intento in $(seq 1 60); do
-  ZONAS=$(kubectl get nodes \
-    -o jsonpath='{range .items[*]}{.metadata.labels.topology\.kubernetes\.io/zone}{"\n"}{end}' |
-    sed '/^$/d' | sort -u | wc -l)
-
-  if [ "$ZONAS" -eq 3 ]; then
-    ZONAS_LISTAS=1
-    break
-  fi
-
-  sleep 5
-done
-
-if [ "$ZONAS_LISTAS" -ne 1 ]; then
-  echo "ERROR: LOS TRES NODOS NO TIENEN ETIQUETA DE ZONA."
-  exit 1
-fi
-
-# DESPLIEGA LOS MANIFIESTOS DE ONLINE BOUTIQUE CON LOS TRES NODOS Y ZONAS LISTOS.
-kubectl apply -f /opt/isc-online-boutique/app.yaml
-
-# ESPERA A QUE LOS DESPLIEGUES DE ONLINE BOUTIQUE ESTEN DISPONIBLES.
-kubectl get deployments -o name |
-while IFS= read -r deployment; do
-  kubectl rollout status "$deployment" --timeout=600s
-done
-
-# MUESTRA EL ESTADO FINAL DE LOS NODOS Y LOS COMPONENTES KUBERNETES.
-kubectl get nodes -o wide
-kubectl get pods -A
-kubectl get services
 
 # CONFIRMA QUE LA INICIALIZACION DEL SERVIDOR TERMINO CORRECTAMENTE.
 echo "K3S, ONLINE BOUTIQUE Y RESPALDOS S3 CONFIGURADOS."
