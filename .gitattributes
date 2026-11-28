@@ -1,0 +1,6 @@
+# Los scripts y plantillas se ejecutan en Linux: siempre con saltos de linea LF.
+*.tftpl text eol=lf
+*.sh    text eol=lf
+*.tf    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
