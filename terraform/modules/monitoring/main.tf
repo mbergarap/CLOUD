@@ -119,14 +119,14 @@ resource "aws_cloudwatch_metric_alarm" "targets" {
 # GENERA UNA ALERTA CUANDO HAY MENOS DE DOS DESTINOS SANOS Y SE PIERDE LA REDUNDANCIA.
 resource "aws_cloudwatch_metric_alarm" "targets_sanos" {
   alarm_name          = "${var.nombre_proyecto}-targets-sanos-bajos"
-  alarm_description   = "Menos de 2 targets sanos: sin redundancia"
+  alarm_description   = "Menos de 3 targets sanos: se perdio un nodo"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 2
   metric_name         = "HealthyHostCount"
   namespace           = "AWS/ApplicationELB"
   period              = 60
   statistic           = "Minimum"
-  threshold           = 2
+  threshold           = 3
   dimensions          = local.dim_alb
   treat_missing_data  = "breaching"
   alarm_actions       = local.acciones

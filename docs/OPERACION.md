@@ -1,8 +1,8 @@
 # Operación
 
-## Despliegue sin `desplegar.ps1`
+## Despliegue
 
-**Requiere cuenta AWS Academy limpia** (no reutilizar la cuenta que tiene infraestructura Terraform remota anterior). Se trabaja en Windows con PowerShell 5.1+ y AWS CLI v2.
+**Requiere cuenta AWS Academy limpia** (no reutilizar una cuenta con infraestructura Terraform anterior). Hace falta Terraform y credenciales de AWS configuradas (AWS CLI v2).
 
 Desde la raíz del repositorio:
 
@@ -14,29 +14,33 @@ terraform plan
 terraform apply
 ```
 
-Antes de ejecutar Terraform, copiar `terraform.tfvars.example` como `terraform.tfvars`, completar `alerta_mail` y `nombre_bucket` y verificar que el nombre del bucket termine en el ID AWS activo de 12 dígitos. Durante `apply`, el recurso `terraform_data.bucket_etcd` invoca `scripts/crear-bucket-etcd.ps1` para preparar el bucket S3 de snapshots mediante AWS CLI (evitando Object Lock, que una SCP de AWS Academy deniega). `module.compute` espera ese recurso antes de iniciar las EC2. El recurso `terraform_data.finalizar_kubernetes` espera Terraform y, mediante SSM, comprueba K3s, etiqueta AZ, aplica `kubernetes/app.yaml` con EFS, verifica Redis y los HPA/PDB, monitoreo y acceso HTTP por ALB. **No hay un backend remoto S3 en esta modalidad.**
+Antes, copiar `terraform.tfvars.example` como `terraform.tfvars` y completar `alerta_mail` y `nombre_bucket`. El nombre del bucket debe ser único en todo S3 y cumplir sus reglas (3 a 63 caracteres, minúsculas, números, puntos y guiones); Terraform lo valida. Si el nombre ya existe en otra cuenta, el arranque del nodo principal falla al crearlo.
 
-No es un despliegue puramente declarativo: Terraform utiliza provisioners y la ejecución local de AWS CLI como transición por restricciones del laboratorio. El operador no necesita correrlos por separado. La ruta fue probada con un `apply` real y acceso HTTP 200; respaldos, restauraciones y observabilidad deben verificarse por separado.
+Durante `apply`, el `user_data` de cada EC2 instala K3s y etiqueta su zona de disponibilidad. El nodo principal además crea el bucket de snapshots (con el rol de la instancia: bloqueo público, cifrado AES256 y retención de 7 días) y aplica `kubernetes/app.yaml`, que Terraform entrega comprimido. Después, `aws_ssm_association.verificar_kubernetes` comprueba por SSM 3 nodos `Ready`, 2 réplicas del frontend y HTTP 200 por el ALB. **No hay un backend remoto S3 en esta modalidad.**
 
-**Estado local:** conservar `terraform.tfstate`, controlar acceso a la PC y mantenerlo fuera de Git. El token del clúster puede aparecer en el estado. Los snapshots etcd en S3 permanecen fuera del estado, y no se borran al ejecutar `terraform destroy`; gestionar su limpieza solo después de aprobarla.
+La ruta se probó con un `apply` real y acceso HTTP 200; respaldos, restauraciones y observabilidad deben verificarse por separado.
 
-**No mezclar flujos:** esta variante usa estado local; nunca ejecutar sobre infraestructura administrada mediante otro estado sin un procedimiento específico de migración. No crear recursos duplicados en una cuenta que ya contenga recursos del obligatorio.
+**Estado local:** conservar `terraform.tfstate`, controlar el acceso a la PC y mantenerlo fuera de Git. El token del clúster puede aparecer en el estado. El bucket de snapshots queda fuera del estado y no se borra con `terraform destroy`; gestionar su limpieza solo después de aprobarla.
+
+**No mezclar flujos:** esta variante usa estado local; nunca ejecutarla sobre infraestructura administrada con otro estado sin un procedimiento de migración.
 
 ## Variables de Terraform (`terraform/variables.tf`)
+
+Todas las variables tienen reglas de validación: Terraform rechaza el `plan` con un mensaje claro si un valor no es válido (correo, nombre del proyecto, región, CIDR, tipo de instancia, versión de K3s, retención de logs y nombre del bucket).
 
 | Variable | Defecto | Descripción |
 |---|---|---|
 | `alerta_mail` | (obligatoria) | Correo de alertas SNS; definir en `terraform.tfvars` |
-| `nombre_bucket` | (obligatoria) | Nombre de bucket etcd único, terminado en el ID de cuenta AWS |
+| `nombre_bucket` | (obligatoria) | Nombre del bucket de snapshots de etcd, único en todo S3 (se sugiere terminarlo con el ID de cuenta) |
 | `nombre_proyecto` | `isc-obligatorio` | Prefijo de nombres |
 | `region` | `us-east-1` | Región |
-| `cidr_vpc` | `10.80.0.0/16` | CIDR de la VPC |
+| `cidr_vpc` | `192.168.0.0/16` | CIDR de la VPC |
 | `tipo_instancia` | `t3.medium` | Tipo de EC2 |
 | `version_k3s` | `v1.37.2+k3s1` | Versión de K3s (vacío = última) |
 | `dias_retencion_logs` | `14` | Retención de logs |
-| `habilitar_recuperacion_ec2` | `false` | Recuperación automática de EC2 | (activar solo si AWS Academy lo permite)
+| `habilitar_recuperacion_ec2` | `false` | Recuperación automática de EC2 (activar solo si AWS Academy lo permite) |
 
-> Mantener el prefijo de proyecto predeterminado salvo que también se revisen las referencias utilizadas por los scripts y las alarmas.
+> Los scripts de `pruebas/` buscan recursos con el prefijo `isc-obligatorio`: si se cambia `nombre_proyecto`, ajustarlos también.
 
 ## Ya existe un despliegue anterior
 

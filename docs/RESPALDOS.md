@@ -5,8 +5,8 @@
 | Dato | Mecanismo | Frecuencia | Retención |
 |---|---|---|---|
 | Datos de Redis (EFS) | AWS Backup (vault + plan + selección, en `modules/storage`) | Diario 03:00 UTC | 7 días |
-| Estado del clúster (etcd) | Snapshots locales de K3s en cada nodo, copiados a S3 por un timer de systemd (`aws s3 sync`, SSE-S3). El bucket lo crea `desplegar.ps1` con AWS CLI | Snapshot cada 12 h; copia a S3 cada 12 h | Local: 14 snapshots; S3: 7 días (ciclo de vida del bucket) |
-| Estado de Terraform | Bucket S3 con versionado | Cada `apply` | Versiones previas |
+| Estado del clúster (etcd) | Snapshots locales de K3s en cada nodo, copiados a S3 por un timer de systemd (`aws s3 sync`, SSE-S3). El bucket lo crea el nodo principal al arrancar, con AWS CLI y el rol de la instancia | Snapshot cada 12 h; copia a S3 cada 12 h | Local: 14 snapshots; S3: 7 días (ciclo de vida del bucket) |
+| Estado de Terraform | Archivo local `terraform.tfstate` (fuera de Git); se recomienda una copia manual protegida | Manual | — |
 
 ## Recuperación
 

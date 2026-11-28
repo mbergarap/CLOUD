@@ -1,4 +1,4 @@
-
+﻿
 #Requires -Version 5.1
 
 <#
@@ -31,7 +31,7 @@ $tf = Join-Path (Split-Path $PSScriptRoot -Parent) 'terraform'
 
 # EJECUTA COMANDOS DE AWS CLI Y DETIENE LA PRUEBA SI SE PRODUCE UN ERROR.
 function Aws($argumentos) {
-    $r = & aws @argumentos
+    $r = & aws.exe @argumentos
     if ($LASTEXITCODE -ne 0) { throw "AWS fallo: $($argumentos -join ' ')" }
     return ($r | Out-String).Trim()
 }
@@ -39,7 +39,8 @@ function Aws($argumentos) {
 # OBTIENE DESDE TERRAFORM LOS IDENTIFICADORES DE LAS INSTANCIAS Y LA URL DE ONLINE BOUTIQUE.
 Push-Location $tf
 try {
-    $ids = @(ConvertFrom-Json -InputObject ((& terraform output -json instancias_k3s) | Out-String))
+    $json = (& terraform output -json instancias_k3s | Out-String)
+    $ids = [string[]](ConvertFrom-Json -InputObject $json)
     $url = (& terraform output -raw url_online_boutique | Out-String).Trim()
 } finally { Pop-Location }
 if ($ids.Count -ne 3) { throw 'No se obtuvieron las tres instancias desde Terraform' }

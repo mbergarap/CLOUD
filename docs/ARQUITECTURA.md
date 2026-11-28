@@ -11,7 +11,7 @@
 | Application Load Balancer | Entrada pública HTTP 80 |
 | Amazon EFS | Volumen persistente del pod de Redis |
 | AWS Backup | Respaldo diario de EFS |
-| Amazon S3 | Copias de los snapshots de etcd (bucket creado mediante AWS CLI invocado por Terraform; estado Terraform local) |
+| Amazon S3 | Copias de los snapshots de etcd (bucket creado por el nodo principal al arrancar; el estado de Terraform es local) |
 | CloudWatch (métricas, alarmas, dashboard, Logs) y SNS | Monitoreo, logs y notificaciones |
 | Systems Manager (SSM) | Administración de instancias sin SSH |
 
@@ -20,9 +20,9 @@
 | Elemento | Valor |
 |---|---|
 | Región | `us-east-1` (variable `region`) |
-| VPC | `10.80.0.0/16` (variable `cidr_vpc`) |
-| Subredes públicas | `10.80.1.0/24`, `10.80.2.0/24`, `10.80.3.0/24` |
-| Subredes privadas | `10.80.10.0/24`, `10.80.20.0/24`, `10.80.30.0/24` |
+| VPC | `192.168.0.0/16` (variable `cidr_vpc`) |
+| Subredes públicas | `192.168.1.0/24`, `192.168.2.0/24`, `192.168.3.0/24` |
+| Subredes privadas | `192.168.10.0/24`, `192.168.20.0/24`, `192.168.30.0/24` |
 | Zonas de disponibilidad | Las 3 primeras disponibles de la región |
 | EC2 | `t3.medium` (variable `tipo_instancia`), Amazon Linux 2023, EBS gp3 40 GiB cifrado |
 | K3s | 3 servidores con etcd embebido (quórum 2 de 3), sin Traefik ni ServiceLB |

@@ -27,7 +27,7 @@ Todas las reglas están en `terraform/modules/security/main.tf` como recursos `a
 - Los puertos internos de K3s solo aceptan tráfico del propio Security Group.
 - IMDSv2 obligatorio en las EC2 (`http_tokens = required`).
 - EBS, EFS y los buckets S3 cifrados; buckets con bloqueo de acceso público.
-- Estado remoto de Terraform en S3 con versionado y cifrado.
+- El estado de Terraform es local y contiene el token de K3s: se mantiene fuera de Git (`.gitignore`) y en una ubicación protegida.
 
 ## Limitaciones
 

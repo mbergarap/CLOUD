@@ -1,0 +1,43 @@
+name: terraform
+
+# Valida el codigo en cada push y pull request. No necesita credenciales de AWS:
+# usa `init -backend=false`, por lo que no toca ningun estado ni crea recursos.
+on:
+  push:
+  pull_request:
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~> 1.9"
+      - name: Formato
+        run: terraform fmt -check -recursive
+      - name: Init sin backend
+        run: terraform init -backend=false -input=false
+      - name: Validate
+        run: terraform validate
+
+  analisis:
+    # Analisis informativo: reporta hallazgos pero no bloquea el pipeline.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v4
+      - name: TFLint
+        continue-on-error: true
+        working-directory: terraform
+        run: tflint --recursive
+      - name: Checkov (seguridad de la infraestructura)
+        continue-on-error: true
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: terraform
+          framework: terraform
+          soft_fail: true
