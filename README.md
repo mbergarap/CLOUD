@@ -31,9 +31,9 @@ Detalle y justificación en [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
 | [`docs/COMPATIBILIDAD-AWS-ACADEMY.md`](docs/COMPATIBILIDAD-AWS-ACADEMY.md) | Restricciones de AWS Academy y decisiones tomadas por ellas |
 | [`docs/PRUEBAS.md`](docs/PRUEBAS.md) | Pruebas de carga y de fallas (procedimiento y registro de resultados) |
 
-## Inicio rápido — Terraform sin `desplegar.ps1`
+## Inicio rápido
 
-Solo para una **cuenta AWS Academy limpia**, con AWS CLI v2 autenticado y PowerShell en Windows:
+Para una **cuenta AWS Academy limpia**, con Terraform instalado y credenciales de AWS configuradas (AWS CLI v2):
 
 ```powershell
 cd terraform
@@ -43,15 +43,15 @@ terraform plan
 terraform apply
 ```
 
-Antes de iniciar, copiar `terraform/terraform.tfvars.example` a `terraform/terraform.tfvars` y completar `alerta_mail` y `nombre_bucket`. El nombre del bucket S3 debe terminar con el ID de 12 dígitos de la cuenta AWS activa (se comprueba mediante AWS CLI). No es necesario crear buckets ni configurar SSH: no hay acceso SSH público a los nodos; se administra mediante SSM. Confirmar el plan antes de responder `yes` a `apply`.
+Antes de iniciar, copiar `terraform/terraform.tfvars.example` a `terraform/terraform.tfvars` y completar `alerta_mail` y `nombre_bucket`. El nombre del bucket debe ser **único en todo S3** (se sugiere terminarlo con el ID de 12 dígitos de la cuenta). No hace falta crear buckets ni configurar SSH: no hay acceso SSH público a los nodos y se administra por SSM. Confirmar el plan antes de responder `yes` a `apply`.
 
-En `apply`, Terraform configura VPC, seguridad, EC2, K3s, EFS, ALB, logs, AWS Backup, SNS y CloudWatch; luego invoca automáticamente **AWS CLI mediante PowerShell** para crear el bucket de snapshots y usar SSM para etiquetar las AZ, aplicar Online Boutique y realizar las validaciones. Los scripts auxiliares son parte de la ejecución de Terraform: **no hay que ejecutarlos manualmente**.
+En `apply`, Terraform crea VPC, seguridad, EC2, EFS, ALB, logs, AWS Backup, SNS y CloudWatch. Las EC2 se configuran solas con `user_data`: instalan K3s, etiquetan su zona de disponibilidad, el nodo principal crea el bucket de snapshots de etcd con el rol de la instancia y aplica Online Boutique. Al final, una asociación de SSM (`aws_ssm_association.verificar_kubernetes`) espera 3 nodos `Ready`, las 2 réplicas del frontend y un HTTP 200 por el ALB. **No hay scripts que ejecutar a mano.**
 
 **Estado local:** el archivo `terraform/terraform.tfstate` contiene secretos como el token de K3s. La carpeta del proyecto debe permanecer privada; no subir el archivo ni las copias `.backup` a Git, no borrarlo y no intercambiarlo entre cuentas. Para trabajo en equipo simultáneo resulta más seguro un estado remoto con bloqueo, pero la consigna no exige esa modalidad.
 
-**ADVERTENCIA:** no ejecutar esta variante con estado local vacío contra una cuenta que ya tiene el obligatorio creado. Terraform podría intentar crear recursos duplicados. No usarla en una cuenta que conserve infraestructura y un backend S3 de una ejecución anterior. Para una migración de estado existente hace falta un procedimiento específico y revisión previa; no usar `-reconfigure` para ocultar el estado anterior. Esta variante se ha probado con `apply` real, HTTP 200 y tres targets sanos. Las demás verificaciones deben documentarse por separado.
+**ADVERTENCIA:** no ejecutar contra una cuenta que ya tiene el obligatorio creado con otro estado: Terraform podría intentar crear recursos duplicados. Esta ruta se probó con `apply` real, HTTP 200 y tres targets sanos; las demás verificaciones están documentadas en [`docs/PRUEBAS.md`](docs/PRUEBAS.md).
 
-**Recuperación si falla la finalización de Kubernetes:** no borrar el estado ni ejecutar `destroy`. Revisar las salidas de Terraform/SSM. Una vez resuelta la causa, un operador puede planificar específicamente `-replace=terraform_data.finalizar_kubernetes`, previa revisión de su plan. El bucket de snapshots creado por AWS CLI es idempotente y queda fuera de la gestión de destrucción de Terraform para preservar las copias.
+**Si falla la verificación final:** no borrar el estado ni ejecutar `destroy`. Entrar a un nodo con `aws ssm start-session --target <id>`, revisar `/var/log/isc-k3s-install.log` y volver a ejecutar `terraform apply` una vez resuelta la causa.
 
 Más detalle en [`docs/OPERACION.md`](docs/OPERACION.md).
 
@@ -59,7 +59,7 @@ Más detalle en [`docs/OPERACION.md`](docs/OPERACION.md).
 
 | Componente | Versión |
 |---|---|
-| Windows PowerShell | 5.1 o PowerShell 7 |
+| Windows PowerShell (solo para los scripts de `pruebas/`) | 5.1 o PowerShell 7 |
 | AWS CLI | v2 |
 | Terraform | `>= 1.5.0` (CI con 1.9.x) |
 | Proveedor `hashicorp/aws` | `~> 5.0` (versión exacta en `terraform/.terraform.lock.hcl`) |
@@ -82,8 +82,8 @@ Más detalle en [`docs/OPERACION.md`](docs/OPERACION.md).
 | `kubernetes/app.yaml` | Manifiestos de Online Boutique, HPA y PDB |
 | `pruebas/` | Scripts de carga (k6) y de falla de instancia |
 | `docs/` | Documentación y diagrama |
-| `terraform/automatizacion.tf` | Arranque del bucket etcd y finalización de Kubernetes dentro de `terraform apply` |
-| `terraform/scripts/` | Scripts auxiliares llamados exclusivamente por Terraform |
+| `.github/workflows/terraform.yml` | CI: `fmt` y `validate` (bloquean) más TFLint y Checkov (informativos) |
+| `terraform/automatizacion.tf` | Verificación final por SSM (3 nodos Ready, frontend y HTTP 200 por el ALB) |
 
 ## Uso de inteligencia artificial
 
@@ -102,4 +102,4 @@ Los resultados generados o revisados con asistencia de IA fueron evaluados por e
 
 ## Nota de portabilidad y AWS Academy
 
-En esta variante, Terraform conserva estado local y genera el bucket de snapshots etcd mediante AWS CLI invocado desde un provisioner. Esto evita la consulta Object Lock bloqueada por SCP en AWS Academy. La ruta `terraform apply` fue probada en AWS Academy; las verificaciones de resiliencia y restauración requieren evidencias adicionales. El antiguo `desplegar.ps1` conserva el flujo con backend S3 y **no debe mezclarse** con el nuevo flujo de estado local.
+Terraform conserva estado local. El bucket de snapshots de etcd **no** lo crea el proveedor AWS: lo crea el `user_data` del nodo principal con AWS CLI y el rol de la instancia. Así se evita la consulta de Object Lock que la SCP de AWS Academy deniega, y `apply` no depende de PowerShell. La ruta `terraform apply` se probó en AWS Academy; las pruebas de carga, de falla de pod y de falla de instancia se ejecutaron y están documentadas en `docs/PRUEBAS.md`; la restauración de los respaldos no se probó.

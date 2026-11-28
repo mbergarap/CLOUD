@@ -382,8 +382,11 @@ spec:
               value: shop_session-id=x-readiness-probe
         livenessProbe:
           initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
           httpGet:
-            path: /_healthz
+            path: /
             port: 8080
             httpHeaders:
             - name: Cookie

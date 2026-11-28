@@ -11,7 +11,7 @@ Código en `terraform/modules/monitoring` y `terraform/modules/logging`.
 | `…-disco-{1..3}` | Disco raíz > 85 % (CloudWatch Agent) |
 | `…-recuperacion-{1..3}` | `StatusCheckFailed_System`: avisa por SNS; recupera la instancia (`ec2:recover`) solo si `habilitar_recuperacion_ec2 = true` (por defecto `false`) |
 | `…-targets-inactivos` | Algún target del ALB sin salud |
-| `…-targets-sanos-bajos` | Menos de 2 targets sanos (sin redundancia) |
+| `…-targets-sanos-bajos` | Menos de 3 targets sanos (se perdio un nodo) |
 | `…-5xx-aplicacion` | > 10 respuestas 5xx de la aplicación en 5 min |
 | `…-5xx-balanceador` | > 5 respuestas 5xx generadas por el ALB en 5 min |
 | `…-latencia-p95` | p95 del tiempo de respuesta > 2 s |

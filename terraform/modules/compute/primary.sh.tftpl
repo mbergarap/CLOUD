@@ -119,9 +119,6 @@ if grep -q 'EFS_SERVER_PLACEHOLDER' /opt/isc-online-boutique/app.yaml; then
   exit 1
 fi
 
-# DESPLIEGA LOS MANIFIESTOS DE ONLINE BOUTIQUE EN KUBERNETES.
-kubectl apply -f /opt/isc-online-boutique/app.yaml
-
 # DEFINE LA REGION Y EL BUCKET PARA ALMACENAR LOS SNAPSHOTS DE ETCD.
 REGION='${region}'
 BUCKET='${etcd_bucket}'
@@ -252,6 +249,31 @@ if [ "$NODOS_LISTOS" -ne 1 ]; then
   echo "ERROR: NO SE ENCUENTRAN LOS TRES NODOS K3S LISTOS."
   exit 1
 fi
+
+# ESPERA A QUE LOS TRES NODOS TENGAN SU ETIQUETA DE ZONA. SIN ESTO, KUBERNETES
+# CONCENTRARIA LAS REPLICAS EN EL PRIMER NODO AL APLICAR LA APLICACION.
+ZONAS_LISTAS=0
+
+for intento in $(seq 1 60); do
+  ZONAS=$(kubectl get nodes \
+    -o jsonpath='{range .items[*]}{.metadata.labels.topology\.kubernetes\.io/zone}{"\n"}{end}' |
+    sed '/^$/d' | sort -u | wc -l)
+
+  if [ "$ZONAS" -eq 3 ]; then
+    ZONAS_LISTAS=1
+    break
+  fi
+
+  sleep 5
+done
+
+if [ "$ZONAS_LISTAS" -ne 1 ]; then
+  echo "ERROR: LOS TRES NODOS NO TIENEN ETIQUETA DE ZONA."
+  exit 1
+fi
+
+# DESPLIEGA LOS MANIFIESTOS DE ONLINE BOUTIQUE CON LOS TRES NODOS Y ZONAS LISTOS.
+kubectl apply -f /opt/isc-online-boutique/app.yaml
 
 # ESPERA A QUE LOS DESPLIEGUES DE ONLINE BOUTIQUE ESTEN DISPONIBLES.
 kubectl get deployments -o name |
