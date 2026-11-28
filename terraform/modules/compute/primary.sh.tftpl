@@ -45,10 +45,23 @@ CWCFG
 ) || echo "AVISO: CLOUDWATCH AGENT NO SE PUDO CONFIGURAR."
 
 # INSTALA K3S Y CONFIGURA EL SERVIDOR PRINCIPAL DEL CLUSTER.
-curl -fsSL https://get.k3s.io | \
-  INSTALL_K3S_EXEC='server --cluster-init --disable traefik --disable servicelb --write-kubeconfig-mode 600 --etcd-snapshot-schedule-cron "0 */12 * * *" --etcd-snapshot-retention 14' \
-  INSTALL_K3S_VERSION='${k3s_version}' \
-  K3S_TOKEN='${token}' sh -
+# SI LA DESCARGA FALLA POR UN ERROR PASAJERO DE RED, SE REINTENTA VARIAS VECES.
+K3S_INSTALADO=0
+
+for intento in $(seq 1 8); do
+  if curl -fsSL --retry 5 --retry-delay 5 https://get.k3s.io -o /tmp/install-k3s.sh &&
+    INSTALL_K3S_EXEC='server --cluster-init --disable traefik --disable servicelb --write-kubeconfig-mode 600 --etcd-snapshot-schedule-cron "0 */12 * * *" --etcd-snapshot-retention 14' \
+    INSTALL_K3S_VERSION='${k3s_version}' \
+    K3S_TOKEN='${token}' sh /tmp/install-k3s.sh; then
+    K3S_INSTALADO=1
+    break
+  fi
+
+  echo "AVISO: FALLO LA INSTALACION DE K3S (INTENTO $intento DE 8). SE REINTENTA EN 15 SEGUNDOS."
+  sleep 15
+done
+
+test "$K3S_INSTALADO" -eq 1
 
 # VERIFICA QUE EL SERVICIO K3S ESTE ACTIVO.
 systemctl is-active --quiet k3s
