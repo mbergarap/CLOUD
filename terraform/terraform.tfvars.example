@@ -1,0 +1,12 @@
+# Copiar este archivo como terraform.tfvars y completar los valores.
+# terraform.tfvars no se sube al repositorio (esta en .gitignore).
+
+# Correo que recibira las alertas de CloudWatch (SNS). AWS envia un correo de
+# confirmacion: hay que aceptarlo para recibir las alarmas.
+alerta_mail = "correo@ejemplo.com"
+
+# Nombre del bucket S3 para los snapshots de etcd. Debe ser UNICO en todo S3:
+# minusculas, numeros, puntos y guiones. Se sugiere terminarlo con el ID de 12
+# digitos de la cuenta AWS, por ejemplo: isc-obligatorio-etcd-123456789012
+# El valor de ejemplo NO es valido a proposito: hay que reemplazarlo.
+nombre_bucket = "CAMBIAR-por-un-nombre-unico"

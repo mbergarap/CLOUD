@@ -24,6 +24,9 @@ data "aws_iam_role" "backup" {
 # CREA EL ALMACÉN DE RESPALDOS DE AWS BACKUP.
 resource "aws_backup_vault" "redis" {
   name = "${var.nombre_proyecto}-redis"
+
+  # PERMITE BORRAR EL VAULT AUNQUE TENGA PUNTOS DE RECUPERACION (terraform destroy).
+  force_destroy = true
 }
 
 # CONFIGURA LOS RESPALDOS DIARIOS DE EFS CON UNA RETENCIÓN DE SIETE DÍAS.
