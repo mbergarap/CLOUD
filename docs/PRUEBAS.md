@@ -125,15 +125,16 @@ Con 2 réplicas y un PodDisruptionBudget (`minAvailable: 1`), siempre hay al men
 
 ## 5. Despliegue desde cero con `terraform apply`
 
-Se probó en una cuenta de AWS Academy vacía (sin instancias, balanceadores ni buckets), solo con `terraform apply` y sin ningún script ni paso manual. Se hizo en tres intentos y cada fallo llevó a una corrección.
+Se probó en una cuenta de AWS Academy vacía (sin instancias, balanceadores ni buckets), solo con `terraform apply` y sin ningún script ni paso manual. Se hizo en cuatro intentos y cada fallo llevó a una corrección.
 
 | Intento | Resultado | Causa y corrección |
 |---|---|---|
 | 1 | Una instancia no pudo descargar K3s y su arranque falló; la tienda no se desplegó sola | La descarga se hacía una sola vez. Ahora `primary.sh.tftpl` y `secondary.sh.tftpl` reintentan hasta 8 veces |
 | 2 | El servidor principal abortó antes de desplegar la tienda; `terraform apply` terminó con error en `aws_ssm_association.verificar_kubernetes` | `BucketAlreadyExists`: el nombre del bucket de etcd ya lo usaba otra cuenta de AWS (los nombres de bucket son únicos en todo AWS). Con la verificación SSM se vio `cloud-init status: error`. Ahora el paso del bucket va al final, con la tienda ya desplegada |
-| 3 | Correcto, sin intervención | Con un `nombre_bucket` único |
+| 3 | Correcto, sin intervención | Con un `nombre_bucket` único. El apply terminó unos minutos antes de que la tienda respondiera |
+| 4 | Correcto, sin intervención, con el código final (bucket al final del arranque) | El apply terminó en unos 8 minutos y la tienda respondió HTTP 200 apenas terminó. El bucket de etcd se creó a las 13:43:38, al final del arranque y con la tienda ya desplegada |
 
-Resultado del intento correcto (83 recursos creados, 0 errores; antes se habían destruido 83 con `terraform destroy`, sin que la vault de AWS Backup bloqueara el borrado):
+Resultado del tercer intento (83 recursos creados, 0 errores; antes se habían destruido 83 con `terraform destroy`, sin que la vault de AWS Backup bloqueara el borrado):
 
 | Dato | Resultado |
 |---|---|
@@ -145,7 +146,7 @@ Resultado del intento correcto (83 recursos creados, 0 errores; antes se habían
 | Verificación SSM | `Success`, tardó unos 3 minutos (13:15:53 a 13:18:46) y terminó con «K3S Y ONLINE BOUTIQUE DISPONIBLES. HTTP 200» |
 | Suscripción SNS | Confirmada por correo |
 
-**Limitación observada.** `terraform apply` dio `Apply complete!` unos 2 o 3 minutos antes de que terminara el script de verificación, así que durante ese tiempo el ALB respondió 502 mientras arrancaban los pods. La tienda quedó disponible sola unos minutos después. Se debe esperar a que el ALB responda HTTP 200 antes de usar la URL.
+**Limitación observada en el tercer intento.** `terraform apply` dio `Apply complete!` unos 2 o 3 minutos antes de que terminara el script de verificación, así que durante ese tiempo el ALB respondió 502 mientras arrancaban los pods. La tienda quedó disponible sola unos minutos después. En el cuarto intento no se repitió: el apply esperó a la verificación y la tienda respondió 200 de inmediato. Como no se reproduce siempre, conviene comprobar que el ALB responda HTTP 200 antes de usar la URL.
 
 **Requisito.** `nombre_bucket` debe ser único en todo AWS; si ya existe en otra cuenta, el respaldo de etcd a S3 no se configura (la tienda sí queda desplegada).
 
@@ -158,5 +159,5 @@ Resultado del intento correcto (83 recursos creados, 0 errores; antes se habían
 | La alarma de targets no avisaba al perder un nodo | Caída de un nodo sin notificación | Corregido: umbral `< 3` en `targets-sanos-bajos`, verificado con correo real |
 | Corte de hasta 90 s al caer un nodo | Errores visibles breves (3 de 44 consultas en la última prueba) | Documentado; mejorable ajustando el health check |
 | La descarga de K3s fallaba una vez y dejaba un nodo sin cluster | Despliegue desde cero incompleto | Corregido: hasta 8 reintentos en el arranque |
-| Un `nombre_bucket` ya usado en otra cuenta abortaba el arranque antes de desplegar la tienda | Tienda sin desplegar | Corregido: el paso del bucket se hace al final |
-| `terraform apply` termina unos minutos antes de que la tienda responda | 502 breve tras el apply | Documentado; esperar a HTTP 200 |
+| Un `nombre_bucket` ya usado en otra cuenta abortaba el arranque antes de desplegar la tienda | Tienda sin desplegar | Corregido: el paso del bucket se hace al final (verificado en el cuarto intento) |
+| `terraform apply` terminó unos minutos antes de que la tienda respondiera (una de las dos veces que se vio) | 502 breve tras el apply | No reproducible siempre; documentado, comprobar HTTP 200 |
